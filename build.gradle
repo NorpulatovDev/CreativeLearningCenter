@@ -36,6 +36,13 @@ dependencies {
 	// For production, uncomment:
 	// runtimeOnly 'org.postgresql:postgresql'
 
+	// Telegram Bot
+	implementation 'org.telegram:telegrambots:6.8.0'
+
+	// JAXB for Java 11+ (required by telegrambots)
+	implementation 'javax.xml.bind:jaxb-api:2.3.1'          // Changed
+	implementation 'org.glassfish.jaxb:jaxb-runtime:2.3.8'  // Changed
+
 	// Lombok
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'

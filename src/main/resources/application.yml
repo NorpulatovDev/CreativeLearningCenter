@@ -32,7 +32,7 @@ jwt:
   expiration: 86400000  # 24 hours in milliseconds
 
 telegram:
-  api-token: Telegram API KEY
+  api-token: TelegramApiKey
   api-url: https://api.telegram.org
 
 server:
