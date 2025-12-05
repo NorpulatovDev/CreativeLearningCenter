@@ -29,11 +29,15 @@ spring:
 
 jwt:
   secret: your_super_secret_key_change_this_in_production_at_least_32_characters_long
-  expiration: 86400000  # 24 hours in milliseconds
+  expiration: 86400000
 
 telegram:
-  api-token: TelegramApiKey
-  api-url: https://api.telegram.org
+  bot:
+    token: 8058975339:AAEXtDX5iTQbc5-8CziiOL2Hu1fILxHaFLw  # Replace with your token
+    username: Creative_learning_service_bot  # Replace with your bot username
+
+app:
+  base-url: http://localhost:8080
 
 server:
   port: 8080
