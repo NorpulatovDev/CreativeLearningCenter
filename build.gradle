@@ -1,0 +1,62 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.2.5'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+description = 'Demo project for Spring Boot'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	// Spring Boot Web
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+
+	// Spring Boot Data JPA
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+	// Spring Security + JWT
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
+
+	// H2 Database (dev) + PostgreSQL (production option)
+	runtimeOnly 'com.h2database:h2'
+	// For production, uncomment:
+	// runtimeOnly 'org.postgresql:postgresql'
+
+	// Lombok
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// Jakarta Validation
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// WebClient for HTTP calls (Telegram)
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+
+	// Swagger UI
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+
+	// Commons Lang for random generation
+	implementation 'org.apache.commons:commons-lang3:3.14.0'
+
+	// Testing
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.security:spring-security-test'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
