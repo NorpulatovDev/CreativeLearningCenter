@@ -1,0 +1,142 @@
+package com.ogabek.CreativeLearningCenter.service.impl;
+
+import com.ogabek.CreativeLearningCenter.dto.request.GroupRequest;
+import com.ogabek.CreativeLearningCenter.dto.response.GroupResponse;
+import com.ogabek.CreativeLearningCenter.entity.Group;
+import com.ogabek.CreativeLearningCenter.entity.Student;
+import com.ogabek.CreativeLearningCenter.entity.Teacher;
+import com.ogabek.CreativeLearningCenter.exception.ResourceNotFoundException;
+import com.ogabek.CreativeLearningCenter.mapper.GroupMapper;
+import com.ogabek.CreativeLearningCenter.repository.AttendanceRepository;
+import com.ogabek.CreativeLearningCenter.repository.GroupRepository;
+import com.ogabek.CreativeLearningCenter.repository.PaymentRepository;
+import com.ogabek.CreativeLearningCenter.repository.StudentRepository;
+import com.ogabek.CreativeLearningCenter.repository.TeacherRepository;
+import com.ogabek.CreativeLearningCenter.service.GroupService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+@Transactional
+public class GroupServiceImpl implements GroupService {
+    
+    private final GroupRepository groupRepository;
+    private final TeacherRepository teacherRepository;
+    private final StudentRepository studentRepository;
+    private final AttendanceRepository attendanceRepository;
+    private final PaymentRepository paymentRepository;
+    private final GroupMapper groupMapper;
+    
+    @Override
+    public GroupResponse create(GroupRequest request) {
+        log.info("Creating group: {}", request.getName());
+        
+        Teacher teacher = teacherRepository.findById(request.getTeacherId())
+                .orElseThrow(() -> new ResourceNotFoundException("Teacher", request.getTeacherId()));
+        
+        Group group = groupMapper.toEntity(request, teacher);
+        group = groupRepository.save(group);
+        
+        log.info("Group created with id: {}", group.getId());
+        return groupMapper.toResponse(group, BigDecimal.ZERO);
+    }
+    
+    @Override
+    @Transactional(readOnly = true)
+    public GroupResponse getById(Long id) {
+        Group group = findGroupById(id);
+        BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(id);
+        return groupMapper.toResponse(group, totalPaid);
+    }
+    
+    @Override
+    @Transactional(readOnly = true)
+    public List<GroupResponse> getAll() {
+        return groupRepository.findAll().stream()
+                .map(group -> {
+                    BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(group.getId());
+                    return groupMapper.toResponse(group, totalPaid);
+                })
+                .toList();
+    }
+    
+    @Override
+    @Transactional(readOnly = true)
+    public List<GroupResponse> getAllSortedByTeacher() {
+        return groupRepository.findAllByOrderByTeacherIdAscNameAsc().stream()
+                .map(group -> {
+                    BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(group.getId());
+                    return groupMapper.toResponse(group, totalPaid);
+                })
+                .toList();
+    }
+    
+    @Override
+    @Transactional(readOnly = true)
+    public List<GroupResponse> getByTeacherId(Long teacherId) {
+        if (!teacherRepository.existsById(teacherId)) {
+            throw new ResourceNotFoundException("Teacher", teacherId);
+        }
+        
+        return groupRepository.findByTeacherIdOrderByNameAsc(teacherId).stream()
+                .map(group -> {
+                    BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(group.getId());
+                    return groupMapper.toResponse(group, totalPaid);
+                })
+                .toList();
+    }
+    
+    @Override
+    public GroupResponse update(Long id, GroupRequest request) {
+        log.info("Updating group: {}", id);
+        
+        Group group = findGroupById(id);
+        Teacher teacher = teacherRepository.findById(request.getTeacherId())
+                .orElseThrow(() -> new ResourceNotFoundException("Teacher", request.getTeacherId()));
+        
+        groupMapper.updateEntity(group, request, teacher);
+        group = groupRepository.save(group);
+        
+        BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(id);
+        return groupMapper.toResponse(group, totalPaid);
+    }
+    
+    @Override
+    public void delete(Long id) {
+        log.info("Deleting group: {}", id);
+        
+        Group group = findGroupById(id);
+        
+        // Detach all students from this group
+        List<Student> students = studentRepository.findByActiveGroupId(id);
+        for (Student student : students) {
+            student.setActiveGroup(null);
+            studentRepository.save(student);
+        }
+        log.info("Detached {} students from group {}", students.size(), id);
+        
+        // Delete all attendances for this group
+        attendanceRepository.deleteByGroupId(id);
+        log.info("Deleted attendances for group {}", id);
+        
+        // Delete all payments for this group
+        paymentRepository.deleteByGroupId(id);
+        log.info("Deleted payments for group {}", id);
+        
+        // Delete the group
+        groupRepository.delete(group);
+        log.info("Group deleted: {}", id);
+    }
+    
+    private Group findGroupById(Long id) {
+        return groupRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Group", id));
+    }
+}
