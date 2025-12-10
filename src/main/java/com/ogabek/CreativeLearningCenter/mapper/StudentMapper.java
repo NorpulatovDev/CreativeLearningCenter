@@ -4,13 +4,15 @@ import com.ogabek.CreativeLearningCenter.dto.request.StudentRequest;
 import com.ogabek.CreativeLearningCenter.dto.response.SmsLinkResponse;
 import com.ogabek.CreativeLearningCenter.dto.response.StudentResponse;
 import com.ogabek.CreativeLearningCenter.entity.Student;
+import com.ogabek.CreativeLearningCenter.entity.StudentGroup;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Component
 public class StudentMapper {
-    
+
     public Student toEntity(StudentRequest request) {
         return Student.builder()
                 .fullName(request.getFullName())
@@ -18,8 +20,17 @@ public class StudentMapper {
                 .parentPhoneNumber(request.getParentPhoneNumber())
                 .build();
     }
-    
-    public StudentResponse toResponse(Student student, BigDecimal totalPaid) {
+
+    public StudentResponse toResponse(Student student, BigDecimal totalPaid, List<StudentGroup> activeGroups) {
+        List<StudentResponse.GroupInfo> groupInfos = activeGroups.stream()
+                .map(sg -> StudentResponse.GroupInfo.builder()
+                        .groupId(sg.getGroup().getId())
+                        .groupName(sg.getGroup().getName())
+                        .teacherName(sg.getGroup().getTeacher().getFullName())
+                        .monthlyFee(sg.getGroup().getMonthlyFee())
+                        .build())
+                .toList();
+
         return StudentResponse.builder()
                 .id(student.getId())
                 .fullName(student.getFullName())
@@ -28,13 +39,13 @@ public class StudentMapper {
                 .smsLinked(student.getSmsLinked())
                 .smsLinkCode(student.getSmsLinkCode())
                 .totalPaid(totalPaid)
-                .activeGroupId(student.getActiveGroup() != null ? student.getActiveGroup().getId() : null)
-                .activeGroupName(student.getActiveGroup() != null ? student.getActiveGroup().getName() : null)
+                .activeGroups(groupInfos)
+                .activeGroupsCount(groupInfos.size())
                 .createdAt(student.getCreatedAt())
                 .updatedAt(student.getUpdatedAt())
                 .build();
     }
-    
+
     public SmsLinkResponse toSmsLinkResponse(Student student) {
         return SmsLinkResponse.builder()
                 .id(student.getId())
@@ -44,7 +55,7 @@ public class StudentMapper {
                 .parentPhoneNumber(student.getParentPhoneNumber())
                 .build();
     }
-    
+
     public void updateEntity(Student student, StudentRequest request) {
         student.setFullName(request.getFullName());
         student.setParentName(request.getParentName());

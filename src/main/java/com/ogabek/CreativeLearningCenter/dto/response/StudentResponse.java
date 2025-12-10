@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -21,8 +22,22 @@ public class StudentResponse {
     private Boolean smsLinked;
     private String smsLinkCode;
     private BigDecimal totalPaid;
-    private Long activeGroupId;
-    private String activeGroupName;
+    
+    // Multiple groups support
+    private List<GroupInfo> activeGroups;
+    private Integer activeGroupsCount;
+    
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class GroupInfo {
+        private Long groupId;
+        private String groupName;
+        private String teacherName;
+        private BigDecimal monthlyFee;
+    }
 }
