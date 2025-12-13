@@ -2,7 +2,7 @@ package com.ogabek.CreativeLearningCenter.controller;
 
 import com.ogabek.CreativeLearningCenter.dto.request.StudentGroupRequest;
 import com.ogabek.CreativeLearningCenter.dto.response.StudentGroupResponse;
-import com.ogabek.CreativeLearningCenter.service.StudentGroupService;
+import com.ogabek.CreativeLearningCenter.service.impl.StudentGroupService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

@@ -3,14 +3,13 @@ package com.ogabek.CreativeLearningCenter.service.impl;
 import com.ogabek.CreativeLearningCenter.dto.request.GroupRequest;
 import com.ogabek.CreativeLearningCenter.dto.response.GroupResponse;
 import com.ogabek.CreativeLearningCenter.entity.Group;
-import com.ogabek.CreativeLearningCenter.entity.Student;
 import com.ogabek.CreativeLearningCenter.entity.Teacher;
 import com.ogabek.CreativeLearningCenter.exception.ResourceNotFoundException;
 import com.ogabek.CreativeLearningCenter.mapper.GroupMapper;
 import com.ogabek.CreativeLearningCenter.repository.AttendanceRepository;
 import com.ogabek.CreativeLearningCenter.repository.GroupRepository;
 import com.ogabek.CreativeLearningCenter.repository.PaymentRepository;
-import com.ogabek.CreativeLearningCenter.repository.StudentRepository;
+import com.ogabek.CreativeLearningCenter.repository.StudentGroupRepository;
 import com.ogabek.CreativeLearningCenter.repository.TeacherRepository;
 import com.ogabek.CreativeLearningCenter.service.GroupService;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +28,7 @@ public class GroupServiceImpl implements GroupService {
     
     private final GroupRepository groupRepository;
     private final TeacherRepository teacherRepository;
-    private final StudentRepository studentRepository;
+    private final StudentGroupRepository studentGroupRepository;
     private final AttendanceRepository attendanceRepository;
     private final PaymentRepository paymentRepository;
     private final GroupMapper groupMapper;
@@ -45,15 +44,16 @@ public class GroupServiceImpl implements GroupService {
         group = groupRepository.save(group);
         
         log.info("Group created with id: {}", group.getId());
-        return groupMapper.toResponse(group, BigDecimal.ZERO);
+        return groupMapper.toResponse(group, 0, BigDecimal.ZERO);
     }
     
     @Override
     @Transactional(readOnly = true)
     public GroupResponse getById(Long id) {
         Group group = findGroupById(id);
+        int activeStudentsCount = studentGroupRepository.countActiveByGroupId(id);
         BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(id);
-        return groupMapper.toResponse(group, totalPaid);
+        return groupMapper.toResponse(group, activeStudentsCount, totalPaid);
     }
     
     @Override
@@ -61,8 +61,9 @@ public class GroupServiceImpl implements GroupService {
     public List<GroupResponse> getAll() {
         return groupRepository.findAll().stream()
                 .map(group -> {
+                    int activeStudentsCount = studentGroupRepository.countActiveByGroupId(group.getId());
                     BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(group.getId());
-                    return groupMapper.toResponse(group, totalPaid);
+                    return groupMapper.toResponse(group, activeStudentsCount, totalPaid);
                 })
                 .toList();
     }
@@ -72,8 +73,9 @@ public class GroupServiceImpl implements GroupService {
     public List<GroupResponse> getAllSortedByTeacher() {
         return groupRepository.findAllByOrderByTeacherIdAscNameAsc().stream()
                 .map(group -> {
+                    int activeStudentsCount = studentGroupRepository.countActiveByGroupId(group.getId());
                     BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(group.getId());
-                    return groupMapper.toResponse(group, totalPaid);
+                    return groupMapper.toResponse(group, activeStudentsCount, totalPaid);
                 })
                 .toList();
     }
@@ -87,8 +89,9 @@ public class GroupServiceImpl implements GroupService {
         
         return groupRepository.findByTeacherIdOrderByNameAsc(teacherId).stream()
                 .map(group -> {
+                    int activeStudentsCount = studentGroupRepository.countActiveByGroupId(group.getId());
                     BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(group.getId());
-                    return groupMapper.toResponse(group, totalPaid);
+                    return groupMapper.toResponse(group, activeStudentsCount, totalPaid);
                 })
                 .toList();
     }
@@ -104,8 +107,9 @@ public class GroupServiceImpl implements GroupService {
         groupMapper.updateEntity(group, request, teacher);
         group = groupRepository.save(group);
         
+        int activeStudentsCount = studentGroupRepository.countActiveByGroupId(id);
         BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(id);
-        return groupMapper.toResponse(group, totalPaid);
+        return groupMapper.toResponse(group, activeStudentsCount, totalPaid);
     }
     
     @Override
@@ -114,13 +118,9 @@ public class GroupServiceImpl implements GroupService {
         
         Group group = findGroupById(id);
         
-        // Detach all students from this group
-        List<Student> students = studentRepository.findByActiveGroupId(id);
-        for (Student student : students) {
-            student.setActiveGroup(null);
-            studentRepository.save(student);
-        }
-        log.info("Detached {} students from group {}", students.size(), id);
+        // Delete all student-group enrollments for this group
+        studentGroupRepository.deleteByGroupId(id);
+        log.info("Deleted student enrollments for group {}", id);
         
         // Delete all attendances for this group
         attendanceRepository.deleteByGroupId(id);

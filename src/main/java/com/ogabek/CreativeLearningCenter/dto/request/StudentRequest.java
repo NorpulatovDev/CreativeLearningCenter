@@ -22,6 +22,4 @@ public class StudentRequest {
     @NotBlank(message = "Parent phone number is required")
     @Pattern(regexp = "^\\+998[0-9]{9}$", message = "Phone number must be in format +998XXXXXXXXX")
     private String parentPhoneNumber;
-    
-    private Long activeGroupId;
 }

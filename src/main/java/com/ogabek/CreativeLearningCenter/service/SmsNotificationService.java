@@ -6,8 +6,8 @@ import com.ogabek.CreativeLearningCenter.entity.Student;
 import java.time.LocalDate;
 
 public interface SmsNotificationService {
-    
-    void sendAbsenceNotification(Student student, LocalDate date);
-    
+
+    void sendAbsenceNotification(Student student, LocalDate date, String groupName);
+
     void sendPaymentNotification(Student student, Payment payment);
 }

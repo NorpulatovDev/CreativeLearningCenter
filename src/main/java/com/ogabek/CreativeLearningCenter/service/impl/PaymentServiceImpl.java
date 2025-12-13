@@ -5,10 +5,12 @@ import com.ogabek.CreativeLearningCenter.dto.response.PaymentResponse;
 import com.ogabek.CreativeLearningCenter.entity.Group;
 import com.ogabek.CreativeLearningCenter.entity.Payment;
 import com.ogabek.CreativeLearningCenter.entity.Student;
+import com.ogabek.CreativeLearningCenter.exception.BadRequestException;
 import com.ogabek.CreativeLearningCenter.exception.ResourceNotFoundException;
 import com.ogabek.CreativeLearningCenter.mapper.PaymentMapper;
 import com.ogabek.CreativeLearningCenter.repository.GroupRepository;
 import com.ogabek.CreativeLearningCenter.repository.PaymentRepository;
+import com.ogabek.CreativeLearningCenter.repository.StudentGroupRepository;
 import com.ogabek.CreativeLearningCenter.repository.StudentRepository;
 import com.ogabek.CreativeLearningCenter.service.PaymentService;
 import com.ogabek.CreativeLearningCenter.service.SmsNotificationService;
@@ -28,6 +30,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final StudentRepository studentRepository;
     private final GroupRepository groupRepository;
+    private final StudentGroupRepository studentGroupRepository;
     private final PaymentMapper paymentMapper;
     private final SmsNotificationService smsNotificationService;
     
@@ -40,6 +43,24 @@ public class PaymentServiceImpl implements PaymentService {
         
         Group group = groupRepository.findById(request.getGroupId())
                 .orElseThrow(() -> new ResourceNotFoundException("Group", request.getGroupId()));
+        
+        // Validate student is enrolled in this group
+        boolean isEnrolled = studentGroupRepository.existsByStudentIdAndGroupIdAndActiveTrue(
+                request.getStudentId(), request.getGroupId());
+        
+        if (!isEnrolled) {
+            // Check if student was ever enrolled (inactive enrollment)
+            var enrollment = studentGroupRepository.findByStudentIdAndGroupId(
+                    request.getStudentId(), request.getGroupId());
+            
+            if (enrollment.isEmpty()) {
+                throw new BadRequestException(
+                        "Student is not enrolled in this group. Please enroll the student first.");
+            }
+            // Allow payment for inactive enrollment (historical payments)
+            log.warn("Accepting payment for inactive enrollment: student {} in group {}", 
+                    request.getStudentId(), request.getGroupId());
+        }
         
         Payment payment = paymentMapper.toEntity(request, student, group);
         payment = paymentRepository.save(payment);

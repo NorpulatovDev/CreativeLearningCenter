@@ -9,12 +9,10 @@ import java.util.Optional;
 
 @Repository
 public interface StudentRepository extends JpaRepository<Student, Long> {
-    
+
     Optional<Student> findBySmsLinkCode(String smsLinkCode);
-    
+
     List<Student> findByParentPhoneNumber(String parentPhoneNumber);
-    
-    List<Student> findByActiveGroupId(Long groupId);
-    
+
     boolean existsBySmsLinkCode(String smsLinkCode);
 }

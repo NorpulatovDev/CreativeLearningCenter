@@ -12,6 +12,7 @@ import com.ogabek.CreativeLearningCenter.exception.ResourceNotFoundException;
 import com.ogabek.CreativeLearningCenter.mapper.AttendanceMapper;
 import com.ogabek.CreativeLearningCenter.repository.AttendanceRepository;
 import com.ogabek.CreativeLearningCenter.repository.GroupRepository;
+import com.ogabek.CreativeLearningCenter.repository.StudentGroupRepository;
 import com.ogabek.CreativeLearningCenter.repository.StudentRepository;
 import com.ogabek.CreativeLearningCenter.service.AttendanceService;
 import com.ogabek.CreativeLearningCenter.service.SmsNotificationService;
@@ -35,6 +36,7 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final AttendanceRepository attendanceRepository;
     private final GroupRepository groupRepository;
     private final StudentRepository studentRepository;
+    private final StudentGroupRepository studentGroupRepository;
     private final AttendanceMapper attendanceMapper;
     private final SmsNotificationService smsNotificationService;
     
@@ -49,9 +51,10 @@ public class AttendanceServiceImpl implements AttendanceService {
             throw new BadRequestException("Attendance already exists for this group and date");
         }
         
-        List<Student> students = studentRepository.findByActiveGroupId(request.getGroupId());
+        // Get students enrolled in this group via StudentGroup junction table
+        List<Student> students = studentGroupRepository.findActiveStudentsByGroupId(request.getGroupId());
         if (students.isEmpty()) {
-            throw new BadRequestException("No students in this group");
+            throw new BadRequestException("No students enrolled in this group");
         }
         
         Set<Long> absentIds = request.getAbsentStudentIds() != null 
@@ -69,7 +72,10 @@ public class AttendanceServiceImpl implements AttendanceService {
             attendances.add(attendance);
             
             if (status == AttendanceStatus.ABSENT) {
-                smsNotificationService.sendAbsenceNotification(student, request.getDate());
+                // Check if student already has absence notification for this date (from another group)
+                if (!hasAbsenceNotificationSentToday(student.getId(), request.getDate())) {
+                    smsNotificationService.sendAbsenceNotification(student, request.getDate(), group.getName());
+                }
             }
         }
         
@@ -142,11 +148,32 @@ public class AttendanceServiceImpl implements AttendanceService {
         attendance.setStatus(request.getStatus());
         attendance = attendanceRepository.save(attendance);
         
+        // Only send notification if changing to ABSENT and no notification sent for this student today
         if (previousStatus != AttendanceStatus.ABSENT && request.getStatus() == AttendanceStatus.ABSENT) {
-            smsNotificationService.sendAbsenceNotification(attendance.getStudent(), attendance.getDate());
+            if (!hasAbsenceNotificationSentToday(attendance.getStudent().getId(), attendance.getDate())) {
+                smsNotificationService.sendAbsenceNotification(
+                        attendance.getStudent(), 
+                        attendance.getDate(),
+                        attendance.getGroup().getName()
+                );
+            } else {
+                log.debug("Skipping duplicate absence notification for student {} on date {}", 
+                        attendance.getStudent().getId(), attendance.getDate());
+            }
         }
         
         return attendanceMapper.toResponse(attendance);
+    }
+    
+    /**
+     * Check if student already has an ABSENT attendance record for this date.
+     * This prevents sending duplicate SMS notifications when toggling attendance
+     * or when a student is absent in multiple groups on the same day.
+     */
+    private boolean hasAbsenceNotificationSentToday(Long studentId, LocalDate date) {
+        List<Attendance> todayAttendances = attendanceRepository.findByStudentIdAndDate(studentId, date);
+        return todayAttendances.stream()
+                .anyMatch(a -> a.getStatus() == AttendanceStatus.ABSENT);
     }
     
     private Attendance findAttendanceById(Long id) {

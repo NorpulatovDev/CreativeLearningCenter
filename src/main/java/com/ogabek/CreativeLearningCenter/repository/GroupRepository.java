@@ -8,10 +8,10 @@ import java.util.List;
 
 @Repository
 public interface GroupRepository extends JpaRepository<Group, Long> {
-    
+
     List<Group> findByTeacherIdOrderByNameAsc(Long teacherId);
-    
+
     List<Group> findAllByOrderByTeacherIdAscNameAsc();
-    
+
     List<Group> findByTeacherId(Long teacherId);
 }

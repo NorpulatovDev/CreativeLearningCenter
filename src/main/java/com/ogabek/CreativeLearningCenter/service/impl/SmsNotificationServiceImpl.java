@@ -33,7 +33,7 @@ public class SmsNotificationServiceImpl implements SmsNotificationService {
     }
     
     @Override
-    public void sendAbsenceNotification(Student student, LocalDate date) {
+    public void sendAbsenceNotification(Student student, LocalDate date, String groupName) {
         if (!canSendSms(student)) {
             log.debug("SMS not sent - student {} is not linked or has no phone", student.getId());
             return;
@@ -41,10 +41,11 @@ public class SmsNotificationServiceImpl implements SmsNotificationService {
         
         String formattedDate = date.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
         String message = String.format(
-                "Hurmatli %s! Farzandingiz %s bugun (%s) darsga kelmadi. Creative Learning Center",
+                "Hurmatli %s! Farzandingiz %s bugun (%s) \"%s\" guruhidagi darsga kelmadi. Creative Learning Center",
                 student.getParentName(),
                 student.getFullName(),
-                formattedDate
+                formattedDate,
+                groupName
         );
         
         sendSms(student.getParentPhoneNumber(), message);
@@ -58,11 +59,12 @@ public class SmsNotificationServiceImpl implements SmsNotificationService {
         }
         
         String message = String.format(
-                "Hurmatli %s! %s uchun %s so'm to'lov qabul qilindi (%s oy uchun). Rahmat! Creative Learning Center",
+                "Hurmatli %s! %s uchun %s so'm to'lov qabul qilindi (%s oy uchun, \"%s\" guruhi). Rahmat! Creative Learning Center",
                 student.getParentName(),
                 student.getFullName(),
                 payment.getAmount().toPlainString(),
-                payment.getPaidForMonth()
+                payment.getPaidForMonth(),
+                payment.getGroup().getName()
         );
         
         sendSms(student.getParentPhoneNumber(), message);

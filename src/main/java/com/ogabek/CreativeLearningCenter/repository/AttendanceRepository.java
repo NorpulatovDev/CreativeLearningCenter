@@ -12,28 +12,31 @@ import java.util.Optional;
 
 @Repository
 public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
-    
+
     List<Attendance> findByGroupIdAndDate(Long groupId, LocalDate date);
-    
+
     Optional<Attendance> findByStudentIdAndGroupIdAndDate(Long studentId, Long groupId, LocalDate date);
-    
+
     @Query("SELECT a FROM Attendance a WHERE a.group.id = :groupId " +
-           "AND FUNCTION('YEAR', a.date) = :year AND FUNCTION('MONTH', a.date) = :month")
-    List<Attendance> findByGroupIdAndMonth(@Param("groupId") Long groupId, 
-                                           @Param("year") int year, 
+            "AND FUNCTION('YEAR', a.date) = :year AND FUNCTION('MONTH', a.date) = :month")
+    List<Attendance> findByGroupIdAndMonth(@Param("groupId") Long groupId,
+                                           @Param("year") int year,
                                            @Param("month") int month);
-    
+
     @Query("SELECT a FROM Attendance a WHERE a.student.id = :studentId " +
-           "AND FUNCTION('YEAR', a.date) = :year AND FUNCTION('MONTH', a.date) = :month")
-    List<Attendance> findByStudentIdAndMonth(@Param("studentId") Long studentId, 
-                                             @Param("year") int year, 
+            "AND FUNCTION('YEAR', a.date) = :year AND FUNCTION('MONTH', a.date) = :month")
+    List<Attendance> findByStudentIdAndMonth(@Param("studentId") Long studentId,
+                                             @Param("year") int year,
                                              @Param("month") int month);
-    
+
     @Query("SELECT a FROM Attendance a WHERE " +
-           "FUNCTION('YEAR', a.date) = :year AND FUNCTION('MONTH', a.date) = :month")
+            "FUNCTION('YEAR', a.date) = :year AND FUNCTION('MONTH', a.date) = :month")
     List<Attendance> findByMonth(@Param("year") int year, @Param("month") int month);
-    
+
+    @Query("SELECT a FROM Attendance a WHERE a.student.id = :studentId AND a.date = :date")
+    List<Attendance> findByStudentIdAndDate(@Param("studentId") Long studentId, @Param("date") LocalDate date);
+
     void deleteByGroupId(Long groupId);
-    
+
     boolean existsByGroupIdAndDate(Long groupId, LocalDate date);
 }

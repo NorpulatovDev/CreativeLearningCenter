@@ -43,15 +43,4 @@ public class StudentController {
                                                    @Valid @RequestBody StudentRequest request) {
         return ResponseEntity.ok(studentService.update(id, request));
     }
-    
-    @PatchMapping("/{studentId}/assign-group/{groupId}")
-    public ResponseEntity<StudentResponse> assignToGroup(@PathVariable Long studentId, 
-                                                          @PathVariable Long groupId) {
-        return ResponseEntity.ok(studentService.assignToGroup(studentId, groupId));
-    }
-    
-    @PatchMapping("/{studentId}/remove-from-group")
-    public ResponseEntity<StudentResponse> removeFromGroup(@PathVariable Long studentId) {
-        return ResponseEntity.ok(studentService.removeFromGroup(studentId));
-    }
 }

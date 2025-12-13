@@ -31,9 +31,10 @@ public class Group {
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal monthlyFee;
 
-    @OneToMany(mappedBy = "activeGroup", fetch = FetchType.LAZY)
+    // Many-to-many relationship through StudentGroup
+    @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
-    private List<Student> students = new ArrayList<>();
+    private List<StudentGroup> studentGroups = new ArrayList<>();
 
     @Column(nullable = false, updatable = false)
     @Builder.Default
@@ -46,5 +47,20 @@ public class Group {
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
+    }
+
+    // Helper method to get active students count
+    public int getActiveStudentsCount() {
+        return (int) studentGroups.stream()
+                .filter(StudentGroup::getActive)
+                .count();
+    }
+
+    // Helper method to get active students
+    public List<Student> getActiveStudents() {
+        return studentGroups.stream()
+                .filter(StudentGroup::getActive)
+                .map(StudentGroup::getStudent)
+                .toList();
     }
 }

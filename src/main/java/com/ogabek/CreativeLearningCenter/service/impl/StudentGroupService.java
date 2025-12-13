@@ -1,4 +1,4 @@
-package com.ogabek.CreativeLearningCenter.service;
+package com.ogabek.CreativeLearningCenter.service.impl;
 
 import com.ogabek.CreativeLearningCenter.dto.request.StudentGroupRequest;
 import com.ogabek.CreativeLearningCenter.dto.response.StudentGroupResponse;
@@ -117,6 +117,11 @@ public class StudentGroupService {
     @Transactional(readOnly = true)
     public int countActiveStudentsInGroup(Long groupId) {
         return studentGroupRepository.countActiveByGroupId(groupId);
+    }
+    
+    @Transactional(readOnly = true)
+    public boolean isStudentEnrolledInGroup(Long studentId, Long groupId) {
+        return studentGroupRepository.existsByStudentIdAndGroupIdAndActiveTrue(studentId, groupId);
     }
     
     private StudentGroupResponse toResponse(StudentGroup sg) {

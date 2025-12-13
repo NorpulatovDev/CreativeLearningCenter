@@ -91,6 +91,12 @@ public class TeacherServiceImpl implements TeacherService {
                 .orElseThrow(() -> new ResourceNotFoundException("Teacher", id));
     }
     
+    /**
+     * Calculate total income from all groups currently assigned to this teacher.
+     * Note: This includes all historical payments to these groups, even if made
+     * before the teacher was assigned. For accurate per-teacher income tracking,
+     * consider adding teacher_id to Payment entity.
+     */
     private BigDecimal calculateTotalIncome(Long teacherId) {
         return groupRepository.findByTeacherId(teacherId).stream()
                 .map(group -> paymentRepository.getTotalPaidByGroupId(group.getId()))

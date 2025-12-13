@@ -3,11 +3,9 @@ package com.ogabek.CreativeLearningCenter.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Entity
 @Table(name = "students")
@@ -38,10 +36,6 @@ public class Student {
     @Column(unique = true)
     private String smsLinkCode;
 
-    @Column(nullable = false, precision = 12, scale = 2)
-    @Builder.Default
-    private BigDecimal totalPaid = BigDecimal.ZERO;
-
     // Many-to-many relationship through StudentGroup
     @OneToMany(mappedBy = "student", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
@@ -55,13 +49,6 @@ public class Student {
     @Builder.Default
     private LocalDateTime updatedAt = LocalDateTime.now();
 
-    @PrePersist
-    protected void onCreate() {
-        if (smsLinkCode == null) {
-            smsLinkCode = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        }
-    }
-
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
@@ -72,6 +59,13 @@ public class Student {
         return studentGroups.stream()
                 .filter(StudentGroup::getActive)
                 .map(StudentGroup::getGroup)
+                .toList();
+    }
+
+    // Helper method to get active student groups
+    public List<StudentGroup> getActiveStudentGroups() {
+        return studentGroups.stream()
+                .filter(StudentGroup::getActive)
                 .toList();
     }
 }

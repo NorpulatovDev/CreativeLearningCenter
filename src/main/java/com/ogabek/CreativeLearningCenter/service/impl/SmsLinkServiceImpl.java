@@ -15,13 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-/**
- * SMS Link Service Implementation
- * 
- * Decision: When /sms/link/by-phone matches multiple students with the same phone number,
- * ALL matching students will be linked and returned in the response list.
- * This allows parents with multiple children to link all at once.
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -60,8 +53,6 @@ public class SmsLinkServiceImpl implements SmsLinkService {
         Student student = studentRepository.findBySmsLinkCode(request.getCode())
                 .orElseThrow(() -> new ResourceNotFoundException("Student", "smsLinkCode", request.getCode()));
         
-        // Update phone number to the provided one and set smsLinked = true
-        // Decision: Update the saved phone to the provided one for flexibility
         student.setParentPhoneNumber(request.getPhoneNumber());
         student.setSmsLinked(true);
         student = studentRepository.save(student);

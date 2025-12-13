@@ -6,18 +6,14 @@ import com.ogabek.CreativeLearningCenter.dto.response.StudentResponse;
 import java.util.List;
 
 public interface StudentService {
-    
+
     StudentResponse create(StudentRequest request);
-    
+
     StudentResponse getById(Long id);
-    
+
     List<StudentResponse> getAll();
-    
+
     List<StudentResponse> getByGroupId(Long groupId);
-    
+
     StudentResponse update(Long id, StudentRequest request);
-    
-    StudentResponse assignToGroup(Long studentId, Long groupId);
-    
-    StudentResponse removeFromGroup(Long studentId);
 }

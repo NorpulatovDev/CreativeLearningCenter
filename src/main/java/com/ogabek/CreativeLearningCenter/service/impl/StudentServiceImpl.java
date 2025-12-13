@@ -2,12 +2,13 @@ package com.ogabek.CreativeLearningCenter.service.impl;
 
 import com.ogabek.CreativeLearningCenter.dto.request.StudentRequest;
 import com.ogabek.CreativeLearningCenter.dto.response.StudentResponse;
-import com.ogabek.CreativeLearningCenter.entity.Group;
 import com.ogabek.CreativeLearningCenter.entity.Student;
+import com.ogabek.CreativeLearningCenter.entity.StudentGroup;
 import com.ogabek.CreativeLearningCenter.exception.ResourceNotFoundException;
 import com.ogabek.CreativeLearningCenter.mapper.StudentMapper;
 import com.ogabek.CreativeLearningCenter.repository.GroupRepository;
 import com.ogabek.CreativeLearningCenter.repository.PaymentRepository;
+import com.ogabek.CreativeLearningCenter.repository.StudentGroupRepository;
 import com.ogabek.CreativeLearningCenter.repository.StudentRepository;
 import com.ogabek.CreativeLearningCenter.service.StudentService;
 import com.ogabek.CreativeLearningCenter.util.SmsCodeGenerator;
@@ -26,6 +27,7 @@ import java.util.List;
 public class StudentServiceImpl implements StudentService {
     
     private final StudentRepository studentRepository;
+    private final StudentGroupRepository studentGroupRepository;
     private final GroupRepository groupRepository;
     private final PaymentRepository paymentRepository;
     private final StudentMapper studentMapper;
@@ -39,16 +41,10 @@ public class StudentServiceImpl implements StudentService {
         student.setSmsLinkCode(smsCodeGenerator.generateUniqueSmsLinkCode());
         student.setSmsLinked(false);
         
-        if (request.getActiveGroupId() != null) {
-            Group group = groupRepository.findById(request.getActiveGroupId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Group", request.getActiveGroupId()));
-            student.setActiveGroup(group);
-        }
-        
         student = studentRepository.save(student);
         log.info("Student created with id: {} and smsLinkCode: {}", student.getId(), student.getSmsLinkCode());
         
-        return studentMapper.toResponse(student, BigDecimal.ZERO);
+        return studentMapper.toResponse(student, BigDecimal.ZERO, List.of());
     }
     
     @Override
@@ -56,7 +52,8 @@ public class StudentServiceImpl implements StudentService {
     public StudentResponse getById(Long id) {
         Student student = findStudentById(id);
         BigDecimal totalPaid = paymentRepository.getTotalPaidByStudentId(id);
-        return studentMapper.toResponse(student, totalPaid);
+        List<StudentGroup> activeGroups = studentGroupRepository.findByStudentIdAndActiveTrue(id);
+        return studentMapper.toResponse(student, totalPaid, activeGroups);
     }
     
     @Override
@@ -65,7 +62,8 @@ public class StudentServiceImpl implements StudentService {
         return studentRepository.findAll().stream()
                 .map(student -> {
                     BigDecimal totalPaid = paymentRepository.getTotalPaidByStudentId(student.getId());
-                    return studentMapper.toResponse(student, totalPaid);
+                    List<StudentGroup> activeGroups = studentGroupRepository.findByStudentIdAndActiveTrue(student.getId());
+                    return studentMapper.toResponse(student, totalPaid, activeGroups);
                 })
                 .toList();
     }
@@ -77,10 +75,15 @@ public class StudentServiceImpl implements StudentService {
             throw new ResourceNotFoundException("Group", groupId);
         }
         
-        return studentRepository.findByActiveGroupId(groupId).stream()
-                .map(student -> {
+        // Get students enrolled in this group via StudentGroup junction table
+        List<StudentGroup> enrollments = studentGroupRepository.findByGroupIdAndActiveTrue(groupId);
+        
+        return enrollments.stream()
+                .map(enrollment -> {
+                    Student student = enrollment.getStudent();
                     BigDecimal totalPaid = paymentRepository.getTotalPaidByStudentId(student.getId());
-                    return studentMapper.toResponse(student, totalPaid);
+                    List<StudentGroup> activeGroups = studentGroupRepository.findByStudentIdAndActiveTrue(student.getId());
+                    return studentMapper.toResponse(student, totalPaid, activeGroups);
                 })
                 .toList();
     }
@@ -92,43 +95,11 @@ public class StudentServiceImpl implements StudentService {
         Student student = findStudentById(id);
         studentMapper.updateEntity(student, request);
         
-        if (request.getActiveGroupId() != null) {
-            Group group = groupRepository.findById(request.getActiveGroupId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Group", request.getActiveGroupId()));
-            student.setActiveGroup(group);
-        }
-        
         student = studentRepository.save(student);
         BigDecimal totalPaid = paymentRepository.getTotalPaidByStudentId(id);
+        List<StudentGroup> activeGroups = studentGroupRepository.findByStudentIdAndActiveTrue(id);
         
-        return studentMapper.toResponse(student, totalPaid);
-    }
-    
-    @Override
-    public StudentResponse assignToGroup(Long studentId, Long groupId) {
-        log.info("Assigning student {} to group {}", studentId, groupId);
-        
-        Student student = findStudentById(studentId);
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new ResourceNotFoundException("Group", groupId));
-        
-        student.setActiveGroup(group);
-        student = studentRepository.save(student);
-        BigDecimal totalPaid = paymentRepository.getTotalPaidByStudentId(studentId);
-        
-        return studentMapper.toResponse(student, totalPaid);
-    }
-    
-    @Override
-    public StudentResponse removeFromGroup(Long studentId) {
-        log.info("Removing student {} from group", studentId);
-        
-        Student student = findStudentById(studentId);
-        student.setActiveGroup(null);
-        student = studentRepository.save(student);
-        BigDecimal totalPaid = paymentRepository.getTotalPaidByStudentId(studentId);
-        
-        return studentMapper.toResponse(student, totalPaid);
+        return studentMapper.toResponse(student, totalPaid, activeGroups);
     }
     
     private Student findStudentById(Long id) {
