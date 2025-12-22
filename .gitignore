@@ -1,0 +1,16 @@
+echo "# Build outputs
+build/
+.gradle/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+" > .gitignore
