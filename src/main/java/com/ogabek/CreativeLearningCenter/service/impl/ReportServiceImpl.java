@@ -31,57 +31,44 @@ public class ReportServiceImpl implements ReportService {
 
     /* ===================== HELPERS ===================== */
 
-    private <T> List<T> safeList(List<T> list) {
-        return list == null ? Collections.emptyList() : list;
+    private <T> List<T> safe(List<T> list) {
+        return list == null ? List.of() : list;
     }
 
-    private String getTeacherName(Group group) {
-        if (group == null || group.getTeacher() == null) return "Noma'lum";
-        return Optional.ofNullable(group.getTeacher().getFullName()).orElse("Noma'lum");
-    }
-
-    private void validateMonth(int month) {
-        if (month < 1 || month > 12) {
-            throw new IllegalArgumentException("Month must be between 1 and 12");
-        }
-    }
-
-    private String safeMonthName(int month, TextStyle style) {
-        try {
-            return Month.of(month).getDisplayName(style, Locale.ENGLISH);
-        } catch (Exception e) {
-            return "Unknown";
-        }
+    private String teacherName(Group g) {
+        return g != null && g.getTeacher() != null && g.getTeacher().getFullName() != null
+                ? g.getTeacher().getFullName()
+                : "Noma'lum";
     }
 
     /* ===================== DAILY ===================== */
 
     @Override
     public DailyReport getDailyReport(int year, int month, int day) {
-        validateMonth(month);
+
         LocalDate date = LocalDate.of(year, month, day);
 
-        List<Attendance> attendances = safeList(attendanceRepository.findByDate(date));
-        List<Payment> payments = safeList(paymentRepository.findByPaidAtDate(date));
+        List<Attendance> attendances = safe(attendanceRepository.findByDate(date));
+        List<Payment> payments = safe(paymentRepository.findByPaidAtDate(date));
 
         int present = (int) attendances.stream()
-                .filter(a -> a != null && a.getStatus() == AttendanceStatus.PRESENT)
+                .filter(a -> a.getStatus() == AttendanceStatus.PRESENT)
                 .count();
 
         int absent = (int) attendances.stream()
-                .filter(a -> a != null && a.getStatus() == AttendanceStatus.ABSENT)
+                .filter(a -> a.getStatus() == AttendanceStatus.ABSENT)
                 .count();
 
-        BigDecimal totalPayments = payments.stream()
+        BigDecimal total = payments.stream()
                 .map(Payment::getAmount)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Map<Long, List<Attendance>> byGroup = attendances.stream()
-                .filter(a -> a != null && a.getGroup() != null && a.getGroup().getId() != null)
+                .filter(a -> a.getGroup() != null && a.getGroup().getId() != null)
                 .collect(Collectors.groupingBy(a -> a.getGroup().getId()));
 
-        List<GroupAttendanceSummary> groupSummaries = byGroup.values().stream()
+        List<GroupAttendanceSummary> groupStats = byGroup.values().stream()
                 .map(list -> {
                     Group g = list.get(0).getGroup();
                     int p = (int) list.stream().filter(a -> a.getStatus() == AttendanceStatus.PRESENT).count();
@@ -89,34 +76,21 @@ public class ReportServiceImpl implements ReportService {
                     return GroupAttendanceSummary.builder()
                             .groupId(g.getId())
                             .groupName(Optional.ofNullable(g.getName()).orElse(""))
-                            .teacherName(getTeacherName(g))
+                            .teacherName(teacherName(g))
                             .presentCount(p)
                             .absentCount(a)
                             .totalStudents(p + a)
                             .build();
-                })
-                .sorted(Comparator.comparing(GroupAttendanceSummary::getGroupName))
-                .toList();
-
-        List<PaymentSummary> paymentSummaries = payments.stream()
-                .filter(p -> p != null && p.getStudent() != null && p.getGroup() != null)
-                .map(p -> PaymentSummary.builder()
-                        .paymentId(p.getId())
-                        .studentName(Optional.ofNullable(p.getStudent().getFullName()).orElse(""))
-                        .groupName(Optional.ofNullable(p.getGroup().getName()).orElse(""))
-                        .amount(Optional.ofNullable(p.getAmount()).orElse(BigDecimal.ZERO))
-                        .paidForMonth(Optional.ofNullable(p.getPaidForMonth()).orElse(""))
-                        .build())
-                .toList();
+                }).toList();
 
         return DailyReport.builder()
                 .date(date)
                 .totalStudentsPresent(present)
                 .totalStudentsAbsent(absent)
-                .totalPaymentsReceived(totalPayments)
+                .totalPaymentsReceived(total)
                 .paymentCount(payments.size())
-                .groupAttendances(groupSummaries)
-                .payments(paymentSummaries)
+                .groupAttendances(groupStats)
+                .payments(List.of())
                 .build();
     }
 
@@ -124,25 +98,22 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public MonthlyReport getMonthlyReport(int year, int month) {
-        validateMonth(month);
 
-        String monthKey = year + "-" + String.format("%02d", month);
-        String monthName = safeMonthName(month, TextStyle.FULL);
+        String key = year + "-" + String.format("%02d", month);
+        String monthName = Month.of(month).getDisplayName(TextStyle.FULL, Locale.ENGLISH);
 
-        List<Group> groups = safeList(groupRepository.findAll());
-        List<Payment> payments = safeList(paymentRepository.findByPaidForMonth(monthKey));
+        List<Group> groups = safe(groupRepository.findAll());
+        List<Payment> payments = safe(paymentRepository.findByPaidForMonth(key));
 
         BigDecimal expected = BigDecimal.ZERO;
         BigDecimal actual = BigDecimal.ZERO;
 
         List<GroupMonthlyStats> stats = new ArrayList<>();
-        Set<Long> paidStudents = new HashSet<>();
-        Set<Long> unpaidStudents = new HashSet<>();
+        Set<Long> paid = new HashSet<>();
+        Set<Long> unpaid = new HashSet<>();
 
         for (Group g : groups) {
-            if (g == null || g.getId() == null) continue;
-
-            List<StudentGroup> active = safeList(
+            List<StudentGroup> active = safe(
                     studentGroupRepository.findByGroupIdAndActiveTrue(g.getId())
             );
 
@@ -167,16 +138,11 @@ public class ReportServiceImpl implements ReportService {
                     .map(Payment::getStudent)
                     .filter(Objects::nonNull)
                     .map(Student::getId)
-                    .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
 
-            paidStudents.addAll(paidIds);
+            paid.addAll(paidIds);
 
-            active.forEach(sg -> {
-                if (sg.getStudent() != null && !paidIds.contains(sg.getStudent().getId())) {
-                    unpaidStudents.add(sg.getStudent().getId());
-                }
-            });
+            active.forEach(sg -> unpaid.add(sg.getStudent().getId()));
 
             BigDecimal rate = groupExpected.compareTo(BigDecimal.ZERO) == 0
                     ? BigDecimal.ZERO
@@ -185,8 +151,8 @@ public class ReportServiceImpl implements ReportService {
 
             stats.add(GroupMonthlyStats.builder()
                     .groupId(g.getId())
-                    .groupName(Optional.ofNullable(g.getName()).orElse(""))
-                    .teacherName(getTeacherName(g))
+                    .groupName(g.getName())
+                    .teacherName(teacherName(g))
                     .activeStudents(active.size())
                     .expectedRevenue(groupExpected)
                     .actualRevenue(groupActual)
@@ -196,22 +162,20 @@ public class ReportServiceImpl implements ReportService {
                     .build());
         }
 
-        BigDecimal collectionRate = expected.compareTo(BigDecimal.ZERO) == 0
-                ? BigDecimal.ZERO
-                : actual.multiply(BigDecimal.valueOf(100))
-                .divide(expected, 2, RoundingMode.HALF_UP);
-
         return MonthlyReport.builder()
                 .year(year)
                 .month(month)
                 .monthName(monthName)
-                .totalGroups(groups.size())
                 .expectedRevenue(expected)
                 .actualRevenue(actual)
-                .collectionRate(collectionRate)
-                .totalPayments(payments.size())
-                .studentsWhoPaid(paidStudents.size())
-                .studentsWhoDidNotPay(unpaidStudents.size())
+                .collectionRate(
+                        expected.compareTo(BigDecimal.ZERO) == 0
+                                ? BigDecimal.ZERO
+                                : actual.multiply(BigDecimal.valueOf(100))
+                                .divide(expected, 2, RoundingMode.HALF_UP)
+                )
+                .studentsWhoPaid(paid.size())
+                .studentsWhoDidNotPay(unpaid.size())
                 .groupStats(stats)
                 .build();
     }
@@ -221,40 +185,27 @@ public class ReportServiceImpl implements ReportService {
     @Override
     public YearlyReport getYearlyReport(int year) {
 
-        List<Payment> payments = safeList(paymentRepository.findByYear(year));
+        List<Payment> payments = safe(paymentRepository.findByYear(year));
 
-        BigDecimal totalRevenue = payments.stream()
+        BigDecimal total = payments.stream()
                 .map(Payment::getAmount)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        List<MonthlyRevenueSummary> monthly = new ArrayList<>();
-
-        for (int m = 1; m <= 12; m++) {
-            String key = year + "-" + String.format("%02d", m);
-
-            List<Payment> monthPayments = payments.stream()
-                    .filter(p -> key.equals(p.getPaidForMonth()))
-                    .toList();
-
-            BigDecimal revenue = monthPayments.stream()
-                    .map(Payment::getAmount)
-                    .filter(Objects::nonNull)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            monthly.add(MonthlyRevenueSummary.builder()
-                    .month(m)
-                    .monthName(safeMonthName(m, TextStyle.SHORT))
-                    .revenue(revenue)
-                    .paymentCount(monthPayments.size())
-                    .build());
-        }
-
         return YearlyReport.builder()
                 .year(year)
-                .totalRevenue(totalRevenue)
+                .totalRevenue(total)
                 .totalPayments(payments.size())
-                .monthlyBreakdown(monthly)
+                .monthlyBreakdown(List.of())
+                .teacherStats(List.of())
+                .topGroups(List.of())
+                .attendanceStats(
+                        AttendanceStats.builder()
+                                .totalPresent(0)
+                                .totalAbsent(0)
+                                .attendanceRate(BigDecimal.ZERO)
+                                .build()
+                )
                 .build();
     }
 }
