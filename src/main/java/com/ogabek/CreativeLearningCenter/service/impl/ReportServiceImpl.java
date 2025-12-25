@@ -29,13 +29,24 @@ public class ReportServiceImpl implements ReportService {
     private final StudentGroupRepository studentGroupRepository;
     private final TeacherRepository teacherRepository;
 
+    // Helper method to safely get teacher name
+    private String getTeacherName(Group group) {
+        if (group == null || group.getTeacher() == null) {
+            return "Noma'lum";
+        }
+        return group.getTeacher().getFullName();
+    }
+
     @Override
     public DailyReport getDailyReport(int year, int month, int day) {
         LocalDate date = LocalDate.of(year, month, day);
         log.info("Generating daily report for {}", date);
 
         List<Attendance> attendances = attendanceRepository.findByDate(date);
+        if (attendances == null) attendances = new ArrayList<>();
+
         List<Payment> payments = paymentRepository.findByPaidAtDate(date);
+        if (payments == null) payments = new ArrayList<>();
 
         int totalPresent = (int) attendances.stream()
                 .filter(a -> a.getStatus() == AttendanceStatus.PRESENT)
@@ -50,6 +61,7 @@ public class ReportServiceImpl implements ReportService {
 
         // Group attendances by group
         Map<Long, List<Attendance>> attendancesByGroup = attendances.stream()
+                .filter(a -> a.getGroup() != null)
                 .collect(Collectors.groupingBy(a -> a.getGroup().getId()));
 
         List<GroupAttendanceSummary> groupSummaries = attendancesByGroup.entrySet().stream()
@@ -66,7 +78,7 @@ public class ReportServiceImpl implements ReportService {
                     return GroupAttendanceSummary.builder()
                             .groupId(first.getGroup().getId())
                             .groupName(first.getGroup().getName())
-                            .teacherName(first.getGroup().getTeacher().getFullName())
+                            .teacherName(getTeacherName(first.getGroup()))
                             .presentCount(present)
                             .absentCount(absent)
                             .totalStudents(present + absent)
@@ -76,6 +88,7 @@ public class ReportServiceImpl implements ReportService {
                 .toList();
 
         List<PaymentSummary> paymentSummaries = payments.stream()
+                .filter(p -> p.getStudent() != null && p.getGroup() != null)
                 .map(p -> PaymentSummary.builder()
                         .paymentId(p.getId())
                         .studentName(p.getStudent().getFullName())
@@ -103,7 +116,10 @@ public class ReportServiceImpl implements ReportService {
         log.info("Generating monthly report for {} {}", monthName, year);
 
         List<Group> allGroups = groupRepository.findAll();
+        if (allGroups == null) allGroups = new ArrayList<>();
+
         List<Payment> monthPayments = paymentRepository.findByPaidForMonth(monthKey);
+        if (monthPayments == null) monthPayments = new ArrayList<>();
 
         // Calculate expected and actual revenue per group
         List<GroupMonthlyStats> groupStats = new ArrayList<>();
@@ -114,17 +130,24 @@ public class ReportServiceImpl implements ReportService {
         BigDecimal totalActual = BigDecimal.ZERO;
 
         for (Group group : allGroups) {
+            // Skip groups without teacher
+            if (group.getTeacher() == null) continue;
+
             List<StudentGroup> activeEnrollments = studentGroupRepository.findByGroupIdAndActiveTrue(group.getId());
+            if (activeEnrollments == null) activeEnrollments = new ArrayList<>();
+
             int activeStudents = activeEnrollments.size();
 
             if (activeStudents == 0) continue;
 
-            BigDecimal expectedForGroup = group.getMonthlyFee().multiply(BigDecimal.valueOf(activeStudents));
+            BigDecimal groupFee = group.getMonthlyFee() != null ? group.getMonthlyFee() : BigDecimal.ZERO;
+            BigDecimal expectedForGroup = groupFee.multiply(BigDecimal.valueOf(activeStudents));
             totalExpected = totalExpected.add(expectedForGroup);
 
             // Find payments for this group in this month
-            List<Payment> groupPayments = monthPayments.stream()
-                    .filter(p -> p.getGroup().getId().equals(group.getId()))
+            final List<Payment> finalMonthPayments = monthPayments;
+            List<Payment> groupPayments = finalMonthPayments.stream()
+                    .filter(p -> p.getGroup() != null && p.getGroup().getId().equals(group.getId()))
                     .toList();
 
             BigDecimal actualForGroup = groupPayments.stream()
@@ -133,6 +156,7 @@ public class ReportServiceImpl implements ReportService {
             totalActual = totalActual.add(actualForGroup);
 
             Set<Long> paidStudentIds = groupPayments.stream()
+                    .filter(p -> p.getStudent() != null)
                     .map(p -> p.getStudent().getId())
                     .collect(Collectors.toSet());
 
@@ -143,7 +167,7 @@ public class ReportServiceImpl implements ReportService {
 
             // Track unpaid students
             for (StudentGroup enrollment : activeEnrollments) {
-                if (!paidStudentIds.contains(enrollment.getStudent().getId())) {
+                if (enrollment.getStudent() != null && !paidStudentIds.contains(enrollment.getStudent().getId())) {
                     studentsWhoDidNotPay.add(enrollment.getStudent().getId());
                 }
             }
@@ -156,7 +180,7 @@ public class ReportServiceImpl implements ReportService {
             groupStats.add(GroupMonthlyStats.builder()
                     .groupId(group.getId())
                     .groupName(group.getName())
-                    .teacherName(group.getTeacher().getFullName())
+                    .teacherName(getTeacherName(group))
                     .activeStudents(activeStudents)
                     .expectedRevenue(expectedForGroup)
                     .actualRevenue(actualForGroup)
@@ -168,16 +192,22 @@ public class ReportServiceImpl implements ReportService {
 
         // Build unpaid students list with details
         List<StudentPaymentStatus> unpaidStudentsList = new ArrayList<>();
+        final List<Payment> finalMonthPayments2 = monthPayments;
         for (Group group : allGroups) {
+            if (group.getTeacher() == null) continue;
+
             List<StudentGroup> activeEnrollments = studentGroupRepository.findByGroupIdAndActiveTrue(group.getId());
-            Set<Long> paidForGroup = monthPayments.stream()
-                    .filter(p -> p.getGroup().getId().equals(group.getId()))
+            if (activeEnrollments == null) activeEnrollments = new ArrayList<>();
+
+            Set<Long> paidForGroup = finalMonthPayments2.stream()
+                    .filter(p -> p.getGroup() != null && p.getGroup().getId().equals(group.getId()) && p.getStudent() != null)
                     .map(p -> p.getStudent().getId())
                     .collect(Collectors.toSet());
 
             for (StudentGroup enrollment : activeEnrollments) {
                 Student student = enrollment.getStudent();
-                if (!paidForGroup.contains(student.getId())) {
+                if (student != null && !paidForGroup.contains(student.getId())) {
+                    BigDecimal fee = group.getMonthlyFee() != null ? group.getMonthlyFee() : BigDecimal.ZERO;
                     unpaidStudentsList.add(StudentPaymentStatus.builder()
                             .studentId(student.getId())
                             .studentName(student.getFullName())
@@ -185,7 +215,7 @@ public class ReportServiceImpl implements ReportService {
                             .parentPhoneNumber(student.getParentPhoneNumber())
                             .groupId(group.getId())
                             .groupName(group.getName())
-                            .amountDue(group.getMonthlyFee())
+                            .amountDue(fee)
                             .hasPaid(false)
                             .build());
                 }
@@ -194,6 +224,8 @@ public class ReportServiceImpl implements ReportService {
 
         // Attendance stats for the month
         List<Attendance> monthAttendances = attendanceRepository.findByMonth(year, month);
+        if (monthAttendances == null) monthAttendances = new ArrayList<>();
+
         int presentCount = (int) monthAttendances.stream()
                 .filter(a -> a.getStatus() == AttendanceStatus.PRESENT)
                 .count();
@@ -211,8 +243,11 @@ public class ReportServiceImpl implements ReportService {
                 .divide(totalExpected, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
 
-        int totalActiveStudents = studentGroupRepository.findAll().stream()
-                .filter(StudentGroup::getActive)
+        List<StudentGroup> allEnrollments = studentGroupRepository.findAll();
+        if (allEnrollments == null) allEnrollments = new ArrayList<>();
+
+        int totalActiveStudents = allEnrollments.stream()
+                .filter(sg -> sg.getActive() != null && sg.getActive() && sg.getStudent() != null)
                 .map(sg -> sg.getStudent().getId())
                 .collect(Collectors.toSet())
                 .size();
@@ -244,16 +279,20 @@ public class ReportServiceImpl implements ReportService {
         log.info("Generating yearly report for {}", year);
 
         List<Payment> yearPayments = paymentRepository.findByYear(year);
+        if (yearPayments == null) yearPayments = new ArrayList<>();
+
         BigDecimal totalRevenue = yearPayments.stream()
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Monthly breakdown
         List<MonthlyRevenueSummary> monthlyBreakdown = new ArrayList<>();
+        final List<Payment> finalYearPayments = yearPayments;
+
         for (int month = 1; month <= 12; month++) {
             String monthKey = year + "-" + String.format("%02d", month);
-            List<Payment> monthPayments = yearPayments.stream()
-                    .filter(p -> p.getPaidForMonth().equals(monthKey))
+            List<Payment> monthPayments = finalYearPayments.stream()
+                    .filter(p -> monthKey.equals(p.getPaidForMonth()))
                     .toList();
 
             BigDecimal monthRevenue = monthPayments.stream()
@@ -270,59 +309,80 @@ public class ReportServiceImpl implements ReportService {
 
         // Teacher stats
         List<Teacher> teachers = teacherRepository.findAll();
-        List<TeacherYearlyStats> teacherStats = teachers.stream()
-                .map(teacher -> {
-                    List<Group> teacherGroups = groupRepository.findByTeacherId(teacher.getId());
-                    int totalStudents = teacherGroups.stream()
-                            .mapToInt(g -> studentGroupRepository.countActiveByGroupId(g.getId()))
-                            .sum();
+        if (teachers == null) teachers = new ArrayList<>();
 
-                    BigDecimal teacherRevenue = yearPayments.stream()
-                            .filter(p -> teacherGroups.stream()
-                                    .anyMatch(g -> g.getId().equals(p.getGroup().getId())))
-                            .map(Payment::getAmount)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<TeacherYearlyStats> teacherStats = new ArrayList<>();
 
-                    return TeacherYearlyStats.builder()
-                            .teacherId(teacher.getId())
-                            .teacherName(teacher.getFullName())
-                            .groupCount(teacherGroups.size())
-                            .totalStudents(totalStudents)
-                            .totalRevenue(teacherRevenue)
-                            .build();
-                })
-                .sorted((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()))
-                .toList();
+        for (Teacher teacher : teachers) {
+            if (teacher == null) continue;
+
+            List<Group> teacherGroups = groupRepository.findByTeacherId(teacher.getId());
+            if (teacherGroups == null) teacherGroups = new ArrayList<>();
+
+            int totalStudents = 0;
+            for (Group g : teacherGroups) {
+                Integer count = studentGroupRepository.countActiveByGroupId(g.getId());
+                totalStudents += (count != null ? count : 0);
+            }
+
+            final List<Group> finalTeacherGroups = teacherGroups;
+            BigDecimal teacherRevenue = finalYearPayments.stream()
+                    .filter(p -> p.getGroup() != null && finalTeacherGroups.stream()
+                            .anyMatch(g -> g.getId().equals(p.getGroup().getId())))
+                    .map(Payment::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            teacherStats.add(TeacherYearlyStats.builder()
+                    .teacherId(teacher.getId())
+                    .teacherName(teacher.getFullName())
+                    .groupCount(teacherGroups.size())
+                    .totalStudents(totalStudents)
+                    .totalRevenue(teacherRevenue)
+                    .build());
+        }
+
+        // Sort by revenue descending
+        teacherStats.sort((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()));
 
         // Top groups by revenue
         List<Group> allGroups = groupRepository.findAll();
-        List<GroupYearlyStats> topGroups = allGroups.stream()
-                .map(group -> {
-                    List<Payment> groupPayments = yearPayments.stream()
-                            .filter(p -> p.getGroup().getId().equals(group.getId()))
-                            .toList();
+        if (allGroups == null) allGroups = new ArrayList<>();
 
-                    BigDecimal groupRevenue = groupPayments.stream()
-                            .map(Payment::getAmount)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<GroupYearlyStats> topGroups = new ArrayList<>();
 
-                    return GroupYearlyStats.builder()
-                            .groupId(group.getId())
-                            .groupName(group.getName())
-                            .teacherName(group.getTeacher().getFullName())
-                            .totalRevenue(groupRevenue)
-                            .totalPayments(groupPayments.size())
-                            .build();
-                })
-                .sorted((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()))
-                .limit(10)
-                .toList();
+        for (Group group : allGroups) {
+            if (group == null) continue;
+
+            List<Payment> groupPayments = finalYearPayments.stream()
+                    .filter(p -> p.getGroup() != null && p.getGroup().getId().equals(group.getId()))
+                    .toList();
+
+            BigDecimal groupRevenue = groupPayments.stream()
+                    .map(Payment::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            topGroups.add(GroupYearlyStats.builder()
+                    .groupId(group.getId())
+                    .groupName(group.getName())
+                    .teacherName(getTeacherName(group))
+                    .totalRevenue(groupRevenue)
+                    .totalPayments(groupPayments.size())
+                    .build());
+        }
+
+        // Sort by revenue descending and limit to 10
+        topGroups.sort((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()));
+        if (topGroups.size() > 10) {
+            topGroups = topGroups.subList(0, 10);
+        }
 
         // Yearly attendance stats
         int totalPresent = 0;
         int totalAbsent = 0;
         for (int month = 1; month <= 12; month++) {
             List<Attendance> monthAttendances = attendanceRepository.findByMonth(year, month);
+            if (monthAttendances == null) continue;
+
             totalPresent += (int) monthAttendances.stream()
                     .filter(a -> a.getStatus() == AttendanceStatus.PRESENT)
                     .count();
