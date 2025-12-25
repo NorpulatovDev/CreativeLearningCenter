@@ -31,10 +31,19 @@ public class ReportServiceImpl implements ReportService {
 
     // Helper method to safely get teacher name
     private String getTeacherName(Group group) {
-        if (group == null || group.getTeacher() == null) {
-            return "Noma'lum";
+        try {
+            if (group != null && group.getTeacher() != null) {
+                return group.getTeacher().getFullName();
+            }
+        } catch (Exception e) {
+            log.warn("Error getting teacher name: {}", e.getMessage());
         }
-        return group.getTeacher().getFullName();
+        return "Noma'lum";
+    }
+
+    // Helper to safely get list or empty
+    private <T> List<T> safeList(List<T> list) {
+        return list != null ? list : new ArrayList<>();
     }
 
     @Override
@@ -42,32 +51,36 @@ public class ReportServiceImpl implements ReportService {
         LocalDate date = LocalDate.of(year, month, day);
         log.info("Generating daily report for {}", date);
 
-        List<Attendance> attendances = attendanceRepository.findByDate(date);
-        if (attendances == null) attendances = new ArrayList<>();
+        try {
+            List<Attendance> attendances = safeList(attendanceRepository.findByDate(date));
+            List<Payment> payments = safeList(paymentRepository.findByPaidAtDate(date));
 
-        List<Payment> payments = paymentRepository.findByPaidAtDate(date);
-        if (payments == null) payments = new ArrayList<>();
+            int totalPresent = (int) attendances.stream()
+                    .filter(a -> a != null && a.getStatus() == AttendanceStatus.PRESENT)
+                    .count();
+            int totalAbsent = (int) attendances.stream()
+                    .filter(a -> a != null && a.getStatus() == AttendanceStatus.ABSENT)
+                    .count();
 
-        int totalPresent = (int) attendances.stream()
-                .filter(a -> a.getStatus() == AttendanceStatus.PRESENT)
-                .count();
-        int totalAbsent = (int) attendances.stream()
-                .filter(a -> a.getStatus() == AttendanceStatus.ABSENT)
-                .count();
+            BigDecimal totalPaymentsAmount = payments.stream()
+                    .filter(p -> p != null && p.getAmount() != null)
+                    .map(Payment::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal totalPayments = payments.stream()
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            // Group attendances by group
+            Map<Long, List<Attendance>> attendancesByGroup = attendances.stream()
+                    .filter(a -> a != null && a.getGroup() != null && a.getGroup().getId() != null)
+                    .collect(Collectors.groupingBy(a -> a.getGroup().getId()));
 
-        // Group attendances by group
-        Map<Long, List<Attendance>> attendancesByGroup = attendances.stream()
-                .filter(a -> a.getGroup() != null)
-                .collect(Collectors.groupingBy(a -> a.getGroup().getId()));
-
-        List<GroupAttendanceSummary> groupSummaries = attendancesByGroup.entrySet().stream()
-                .map(entry -> {
+            List<GroupAttendanceSummary> groupSummaries = new ArrayList<>();
+            for (Map.Entry<Long, List<Attendance>> entry : attendancesByGroup.entrySet()) {
+                try {
                     List<Attendance> groupAttendances = entry.getValue();
+                    if (groupAttendances.isEmpty()) continue;
+
                     Attendance first = groupAttendances.get(0);
+                    if (first.getGroup() == null) continue;
+
                     int present = (int) groupAttendances.stream()
                             .filter(a -> a.getStatus() == AttendanceStatus.PRESENT)
                             .count();
@@ -75,38 +88,61 @@ public class ReportServiceImpl implements ReportService {
                             .filter(a -> a.getStatus() == AttendanceStatus.ABSENT)
                             .count();
 
-                    return GroupAttendanceSummary.builder()
+                    groupSummaries.add(GroupAttendanceSummary.builder()
                             .groupId(first.getGroup().getId())
-                            .groupName(first.getGroup().getName())
+                            .groupName(first.getGroup().getName() != null ? first.getGroup().getName() : "")
                             .teacherName(getTeacherName(first.getGroup()))
                             .presentCount(present)
                             .absentCount(absent)
                             .totalStudents(present + absent)
-                            .build();
-                })
-                .sorted(Comparator.comparing(GroupAttendanceSummary::getGroupName))
-                .toList();
+                            .build());
+                } catch (Exception e) {
+                    log.warn("Error processing group attendance: {}", e.getMessage());
+                }
+            }
 
-        List<PaymentSummary> paymentSummaries = payments.stream()
-                .filter(p -> p.getStudent() != null && p.getGroup() != null)
-                .map(p -> PaymentSummary.builder()
-                        .paymentId(p.getId())
-                        .studentName(p.getStudent().getFullName())
-                        .groupName(p.getGroup().getName())
-                        .amount(p.getAmount())
-                        .paidForMonth(p.getPaidForMonth())
-                        .build())
-                .toList();
+            groupSummaries.sort(Comparator.comparing(GroupAttendanceSummary::getGroupName));
 
-        return DailyReport.builder()
-                .date(date)
-                .totalStudentsPresent(totalPresent)
-                .totalStudentsAbsent(totalAbsent)
-                .totalPaymentsReceived(totalPayments)
-                .paymentCount(payments.size())
-                .groupAttendances(groupSummaries)
-                .payments(paymentSummaries)
-                .build();
+            List<PaymentSummary> paymentSummaries = new ArrayList<>();
+            for (Payment p : payments) {
+                try {
+                    if (p != null && p.getStudent() != null && p.getGroup() != null) {
+                        paymentSummaries.add(PaymentSummary.builder()
+                                .paymentId(p.getId())
+                                .studentName(p.getStudent().getFullName() != null ? p.getStudent().getFullName() : "")
+                                .groupName(p.getGroup().getName() != null ? p.getGroup().getName() : "")
+                                .amount(p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
+                                .paidForMonth(p.getPaidForMonth() != null ? p.getPaidForMonth() : "")
+                                .build());
+                    }
+                } catch (Exception e) {
+                    log.warn("Error processing payment summary: {}", e.getMessage());
+                }
+            }
+
+            return DailyReport.builder()
+                    .date(date)
+                    .totalStudentsPresent(totalPresent)
+                    .totalStudentsAbsent(totalAbsent)
+                    .totalPaymentsReceived(totalPaymentsAmount)
+                    .paymentCount(payments.size())
+                    .groupAttendances(groupSummaries)
+                    .payments(paymentSummaries)
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Error generating daily report: {}", e.getMessage(), e);
+            // Return empty report instead of throwing exception
+            return DailyReport.builder()
+                    .date(date)
+                    .totalStudentsPresent(0)
+                    .totalStudentsAbsent(0)
+                    .totalPaymentsReceived(BigDecimal.ZERO)
+                    .paymentCount(0)
+                    .groupAttendances(new ArrayList<>())
+                    .payments(new ArrayList<>())
+                    .build();
+        }
     }
 
     @Override
@@ -115,299 +151,400 @@ public class ReportServiceImpl implements ReportService {
         String monthName = Month.of(month).getDisplayName(TextStyle.FULL, Locale.ENGLISH);
         log.info("Generating monthly report for {} {}", monthName, year);
 
-        List<Group> allGroups = groupRepository.findAll();
-        if (allGroups == null) allGroups = new ArrayList<>();
+        try {
+            List<Group> allGroups = safeList(groupRepository.findAll());
+            List<Payment> monthPayments = safeList(paymentRepository.findByPaidForMonth(monthKey));
 
-        List<Payment> monthPayments = paymentRepository.findByPaidForMonth(monthKey);
-        if (monthPayments == null) monthPayments = new ArrayList<>();
+            List<GroupMonthlyStats> groupStats = new ArrayList<>();
+            Set<Long> studentsWhoPaid = new HashSet<>();
+            Set<Long> studentsWhoDidNotPay = new HashSet<>();
 
-        // Calculate expected and actual revenue per group
-        List<GroupMonthlyStats> groupStats = new ArrayList<>();
-        Set<Long> studentsWhoPaid = new HashSet<>();
-        Set<Long> studentsWhoDidNotPay = new HashSet<>();
+            BigDecimal totalExpected = BigDecimal.ZERO;
+            BigDecimal totalActual = BigDecimal.ZERO;
 
-        BigDecimal totalExpected = BigDecimal.ZERO;
-        BigDecimal totalActual = BigDecimal.ZERO;
+            for (Group group : allGroups) {
+                try {
+                    if (group == null || group.getId() == null) continue;
 
-        for (Group group : allGroups) {
-            // Skip groups without teacher
-            if (group.getTeacher() == null) continue;
+                    List<StudentGroup> activeEnrollments = safeList(
+                            studentGroupRepository.findByGroupIdAndActiveTrue(group.getId()));
 
-            List<StudentGroup> activeEnrollments = studentGroupRepository.findByGroupIdAndActiveTrue(group.getId());
-            if (activeEnrollments == null) activeEnrollments = new ArrayList<>();
+                    int activeStudents = activeEnrollments.size();
+                    if (activeStudents == 0) continue;
 
-            int activeStudents = activeEnrollments.size();
+                    BigDecimal groupFee = group.getMonthlyFee() != null ? group.getMonthlyFee() : BigDecimal.ZERO;
+                    BigDecimal expectedForGroup = groupFee.multiply(BigDecimal.valueOf(activeStudents));
+                    totalExpected = totalExpected.add(expectedForGroup);
 
-            if (activeStudents == 0) continue;
+                    // Find payments for this group in this month
+                    List<Payment> groupPayments = monthPayments.stream()
+                            .filter(p -> p != null && p.getGroup() != null &&
+                                    group.getId().equals(p.getGroup().getId()))
+                            .toList();
 
-            BigDecimal groupFee = group.getMonthlyFee() != null ? group.getMonthlyFee() : BigDecimal.ZERO;
-            BigDecimal expectedForGroup = groupFee.multiply(BigDecimal.valueOf(activeStudents));
-            totalExpected = totalExpected.add(expectedForGroup);
+                    BigDecimal actualForGroup = groupPayments.stream()
+                            .filter(p -> p.getAmount() != null)
+                            .map(Payment::getAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    totalActual = totalActual.add(actualForGroup);
 
-            // Find payments for this group in this month
-            final List<Payment> finalMonthPayments = monthPayments;
-            List<Payment> groupPayments = finalMonthPayments.stream()
-                    .filter(p -> p.getGroup() != null && p.getGroup().getId().equals(group.getId()))
-                    .toList();
+                    Set<Long> paidStudentIds = groupPayments.stream()
+                            .filter(p -> p.getStudent() != null && p.getStudent().getId() != null)
+                            .map(p -> p.getStudent().getId())
+                            .collect(Collectors.toSet());
 
-            BigDecimal actualForGroup = groupPayments.stream()
-                    .map(Payment::getAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            totalActual = totalActual.add(actualForGroup);
+                    int paidCount = paidStudentIds.size();
+                    int unpaidCount = activeStudents - paidCount;
 
-            Set<Long> paidStudentIds = groupPayments.stream()
-                    .filter(p -> p.getStudent() != null)
-                    .map(p -> p.getStudent().getId())
-                    .collect(Collectors.toSet());
+                    studentsWhoPaid.addAll(paidStudentIds);
 
-            int paidCount = paidStudentIds.size();
-            int unpaidCount = activeStudents - paidCount;
+                    // Track unpaid students
+                    for (StudentGroup enrollment : activeEnrollments) {
+                        try {
+                            if (enrollment != null && enrollment.getStudent() != null &&
+                                    enrollment.getStudent().getId() != null &&
+                                    !paidStudentIds.contains(enrollment.getStudent().getId())) {
+                                studentsWhoDidNotPay.add(enrollment.getStudent().getId());
+                            }
+                        } catch (Exception e) {
+                            log.warn("Error tracking unpaid student: {}", e.getMessage());
+                        }
+                    }
 
-            studentsWhoPaid.addAll(paidStudentIds);
+                    BigDecimal collectionRate = BigDecimal.ZERO;
+                    if (expectedForGroup.compareTo(BigDecimal.ZERO) > 0) {
+                        collectionRate = actualForGroup.multiply(BigDecimal.valueOf(100))
+                                .divide(expectedForGroup, 2, RoundingMode.HALF_UP);
+                    }
 
-            // Track unpaid students
-            for (StudentGroup enrollment : activeEnrollments) {
-                if (enrollment.getStudent() != null && !paidStudentIds.contains(enrollment.getStudent().getId())) {
-                    studentsWhoDidNotPay.add(enrollment.getStudent().getId());
-                }
-            }
-
-            BigDecimal collectionRate = expectedForGroup.compareTo(BigDecimal.ZERO) > 0
-                    ? actualForGroup.multiply(BigDecimal.valueOf(100))
-                    .divide(expectedForGroup, 2, RoundingMode.HALF_UP)
-                    : BigDecimal.ZERO;
-
-            groupStats.add(GroupMonthlyStats.builder()
-                    .groupId(group.getId())
-                    .groupName(group.getName())
-                    .teacherName(getTeacherName(group))
-                    .activeStudents(activeStudents)
-                    .expectedRevenue(expectedForGroup)
-                    .actualRevenue(actualForGroup)
-                    .paidStudents(paidCount)
-                    .unpaidStudents(unpaidCount)
-                    .collectionRate(collectionRate)
-                    .build());
-        }
-
-        // Build unpaid students list with details
-        List<StudentPaymentStatus> unpaidStudentsList = new ArrayList<>();
-        final List<Payment> finalMonthPayments2 = monthPayments;
-        for (Group group : allGroups) {
-            if (group.getTeacher() == null) continue;
-
-            List<StudentGroup> activeEnrollments = studentGroupRepository.findByGroupIdAndActiveTrue(group.getId());
-            if (activeEnrollments == null) activeEnrollments = new ArrayList<>();
-
-            Set<Long> paidForGroup = finalMonthPayments2.stream()
-                    .filter(p -> p.getGroup() != null && p.getGroup().getId().equals(group.getId()) && p.getStudent() != null)
-                    .map(p -> p.getStudent().getId())
-                    .collect(Collectors.toSet());
-
-            for (StudentGroup enrollment : activeEnrollments) {
-                Student student = enrollment.getStudent();
-                if (student != null && !paidForGroup.contains(student.getId())) {
-                    BigDecimal fee = group.getMonthlyFee() != null ? group.getMonthlyFee() : BigDecimal.ZERO;
-                    unpaidStudentsList.add(StudentPaymentStatus.builder()
-                            .studentId(student.getId())
-                            .studentName(student.getFullName())
-                            .parentName(student.getParentName())
-                            .parentPhoneNumber(student.getParentPhoneNumber())
+                    groupStats.add(GroupMonthlyStats.builder()
                             .groupId(group.getId())
-                            .groupName(group.getName())
-                            .amountDue(fee)
-                            .hasPaid(false)
+                            .groupName(group.getName() != null ? group.getName() : "")
+                            .teacherName(getTeacherName(group))
+                            .activeStudents(activeStudents)
+                            .expectedRevenue(expectedForGroup)
+                            .actualRevenue(actualForGroup)
+                            .paidStudents(paidCount)
+                            .unpaidStudents(unpaidCount)
+                            .collectionRate(collectionRate)
                             .build());
+
+                } catch (Exception e) {
+                    log.warn("Error processing group stats for group: {}", e.getMessage());
                 }
             }
+
+            // Build unpaid students list
+            List<StudentPaymentStatus> unpaidStudentsList = new ArrayList<>();
+            for (Group group : allGroups) {
+                try {
+                    if (group == null || group.getId() == null) continue;
+
+                    List<StudentGroup> activeEnrollments = safeList(
+                            studentGroupRepository.findByGroupIdAndActiveTrue(group.getId()));
+
+                    Set<Long> paidForGroup = monthPayments.stream()
+                            .filter(p -> p != null && p.getGroup() != null &&
+                                    group.getId().equals(p.getGroup().getId()) &&
+                                    p.getStudent() != null && p.getStudent().getId() != null)
+                            .map(p -> p.getStudent().getId())
+                            .collect(Collectors.toSet());
+
+                    for (StudentGroup enrollment : activeEnrollments) {
+                        try {
+                            Student student = enrollment != null ? enrollment.getStudent() : null;
+                            if (student != null && student.getId() != null &&
+                                    !paidForGroup.contains(student.getId())) {
+
+                                BigDecimal fee = group.getMonthlyFee() != null ?
+                                        group.getMonthlyFee() : BigDecimal.ZERO;
+
+                                unpaidStudentsList.add(StudentPaymentStatus.builder()
+                                        .studentId(student.getId())
+                                        .studentName(student.getFullName() != null ? student.getFullName() : "")
+                                        .parentName(student.getParentName() != null ? student.getParentName() : "")
+                                        .parentPhoneNumber(student.getParentPhoneNumber() != null ?
+                                                student.getParentPhoneNumber() : "")
+                                        .groupId(group.getId())
+                                        .groupName(group.getName() != null ? group.getName() : "")
+                                        .amountDue(fee)
+                                        .hasPaid(false)
+                                        .build());
+                            }
+                        } catch (Exception e) {
+                            log.warn("Error processing unpaid student: {}", e.getMessage());
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Error building unpaid list for group: {}", e.getMessage());
+                }
+            }
+
+            // Attendance stats
+            int presentCount = 0;
+            int absentCount = 0;
+            try {
+                List<Attendance> monthAttendances = safeList(attendanceRepository.findByMonth(year, month));
+                presentCount = (int) monthAttendances.stream()
+                        .filter(a -> a != null && a.getStatus() == AttendanceStatus.PRESENT)
+                        .count();
+                absentCount = (int) monthAttendances.stream()
+                        .filter(a -> a != null && a.getStatus() == AttendanceStatus.ABSENT)
+                        .count();
+            } catch (Exception e) {
+                log.warn("Error getting attendance stats: {}", e.getMessage());
+            }
+
+            BigDecimal attendanceRate = BigDecimal.ZERO;
+            if ((presentCount + absentCount) > 0) {
+                attendanceRate = BigDecimal.valueOf(presentCount * 100.0 / (presentCount + absentCount))
+                        .setScale(2, RoundingMode.HALF_UP);
+            }
+
+            BigDecimal overallCollectionRate = BigDecimal.ZERO;
+            if (totalExpected.compareTo(BigDecimal.ZERO) > 0) {
+                overallCollectionRate = totalActual.multiply(BigDecimal.valueOf(100))
+                        .divide(totalExpected, 2, RoundingMode.HALF_UP);
+            }
+
+            int totalActiveStudents = 0;
+            try {
+                List<StudentGroup> allEnrollments = safeList(studentGroupRepository.findAll());
+                totalActiveStudents = (int) allEnrollments.stream()
+                        .filter(sg -> sg != null && Boolean.TRUE.equals(sg.getActive()) &&
+                                sg.getStudent() != null && sg.getStudent().getId() != null)
+                        .map(sg -> sg.getStudent().getId())
+                        .distinct()
+                        .count();
+            } catch (Exception e) {
+                log.warn("Error counting active students: {}", e.getMessage());
+            }
+
+            return MonthlyReport.builder()
+                    .year(year)
+                    .month(month)
+                    .monthName(monthName)
+                    .totalActiveStudents(totalActiveStudents)
+                    .totalGroups(allGroups.size())
+                    .expectedRevenue(totalExpected)
+                    .actualRevenue(totalActual)
+                    .collectionRate(overallCollectionRate)
+                    .totalPayments(monthPayments.size())
+                    .studentsWhoPaid(studentsWhoPaid.size())
+                    .studentsWhoDidNotPay(studentsWhoDidNotPay.size())
+                    .groupStats(groupStats)
+                    .unpaidStudents(unpaidStudentsList)
+                    .attendanceStats(AttendanceStats.builder()
+                            .totalPresent(presentCount)
+                            .totalAbsent(absentCount)
+                            .attendanceRate(attendanceRate)
+                            .build())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Error generating monthly report: {}", e.getMessage(), e);
+            // Return empty report
+            return MonthlyReport.builder()
+                    .year(year)
+                    .month(month)
+                    .monthName(monthName)
+                    .totalActiveStudents(0)
+                    .totalGroups(0)
+                    .expectedRevenue(BigDecimal.ZERO)
+                    .actualRevenue(BigDecimal.ZERO)
+                    .collectionRate(BigDecimal.ZERO)
+                    .totalPayments(0)
+                    .studentsWhoPaid(0)
+                    .studentsWhoDidNotPay(0)
+                    .groupStats(new ArrayList<>())
+                    .unpaidStudents(new ArrayList<>())
+                    .attendanceStats(AttendanceStats.builder()
+                            .totalPresent(0)
+                            .totalAbsent(0)
+                            .attendanceRate(BigDecimal.ZERO)
+                            .build())
+                    .build();
         }
-
-        // Attendance stats for the month
-        List<Attendance> monthAttendances = attendanceRepository.findByMonth(year, month);
-        if (monthAttendances == null) monthAttendances = new ArrayList<>();
-
-        int presentCount = (int) monthAttendances.stream()
-                .filter(a -> a.getStatus() == AttendanceStatus.PRESENT)
-                .count();
-        int absentCount = (int) monthAttendances.stream()
-                .filter(a -> a.getStatus() == AttendanceStatus.ABSENT)
-                .count();
-
-        BigDecimal attendanceRate = (presentCount + absentCount) > 0
-                ? BigDecimal.valueOf(presentCount * 100.0 / (presentCount + absentCount))
-                .setScale(2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
-
-        BigDecimal overallCollectionRate = totalExpected.compareTo(BigDecimal.ZERO) > 0
-                ? totalActual.multiply(BigDecimal.valueOf(100))
-                .divide(totalExpected, 2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
-
-        List<StudentGroup> allEnrollments = studentGroupRepository.findAll();
-        if (allEnrollments == null) allEnrollments = new ArrayList<>();
-
-        int totalActiveStudents = allEnrollments.stream()
-                .filter(sg -> sg.getActive() != null && sg.getActive() && sg.getStudent() != null)
-                .map(sg -> sg.getStudent().getId())
-                .collect(Collectors.toSet())
-                .size();
-
-        return MonthlyReport.builder()
-                .year(year)
-                .month(month)
-                .monthName(monthName)
-                .totalActiveStudents(totalActiveStudents)
-                .totalGroups(allGroups.size())
-                .expectedRevenue(totalExpected)
-                .actualRevenue(totalActual)
-                .collectionRate(overallCollectionRate)
-                .totalPayments(monthPayments.size())
-                .studentsWhoPaid(studentsWhoPaid.size())
-                .studentsWhoDidNotPay(studentsWhoDidNotPay.size())
-                .groupStats(groupStats)
-                .unpaidStudents(unpaidStudentsList)
-                .attendanceStats(AttendanceStats.builder()
-                        .totalPresent(presentCount)
-                        .totalAbsent(absentCount)
-                        .attendanceRate(attendanceRate)
-                        .build())
-                .build();
     }
 
     @Override
     public YearlyReport getYearlyReport(int year) {
         log.info("Generating yearly report for {}", year);
 
-        List<Payment> yearPayments = paymentRepository.findByYear(year);
-        if (yearPayments == null) yearPayments = new ArrayList<>();
+        try {
+            List<Payment> yearPayments = safeList(paymentRepository.findByYear(year));
 
-        BigDecimal totalRevenue = yearPayments.stream()
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // Monthly breakdown
-        List<MonthlyRevenueSummary> monthlyBreakdown = new ArrayList<>();
-        final List<Payment> finalYearPayments = yearPayments;
-
-        for (int month = 1; month <= 12; month++) {
-            String monthKey = year + "-" + String.format("%02d", month);
-            List<Payment> monthPayments = finalYearPayments.stream()
-                    .filter(p -> monthKey.equals(p.getPaidForMonth()))
-                    .toList();
-
-            BigDecimal monthRevenue = monthPayments.stream()
+            BigDecimal totalRevenue = yearPayments.stream()
+                    .filter(p -> p != null && p.getAmount() != null)
                     .map(Payment::getAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-            monthlyBreakdown.add(MonthlyRevenueSummary.builder()
-                    .month(month)
-                    .monthName(Month.of(month).getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
-                    .revenue(monthRevenue)
-                    .paymentCount(monthPayments.size())
-                    .build());
-        }
+            // Monthly breakdown
+            List<MonthlyRevenueSummary> monthlyBreakdown = new ArrayList<>();
+            for (int m = 1; m <= 12; m++) {
+                try {
+                    String monthKey = year + "-" + String.format("%02d", m);
+                    final int currentMonth = m;
 
-        // Teacher stats
-        List<Teacher> teachers = teacherRepository.findAll();
-        if (teachers == null) teachers = new ArrayList<>();
+                    List<Payment> monthPayments = yearPayments.stream()
+                            .filter(p -> p != null && monthKey.equals(p.getPaidForMonth()))
+                            .toList();
 
-        List<TeacherYearlyStats> teacherStats = new ArrayList<>();
+                    BigDecimal monthRevenue = monthPayments.stream()
+                            .filter(p -> p.getAmount() != null)
+                            .map(Payment::getAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        for (Teacher teacher : teachers) {
-            if (teacher == null) continue;
-
-            List<Group> teacherGroups = groupRepository.findByTeacherId(teacher.getId());
-            if (teacherGroups == null) teacherGroups = new ArrayList<>();
-
-            int totalStudents = 0;
-            for (Group g : teacherGroups) {
-                Integer count = studentGroupRepository.countActiveByGroupId(g.getId());
-                totalStudents += (count != null ? count : 0);
+                    monthlyBreakdown.add(MonthlyRevenueSummary.builder()
+                            .month(currentMonth)
+                            .monthName(Month.of(currentMonth).getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
+                            .revenue(monthRevenue)
+                            .paymentCount(monthPayments.size())
+                            .build());
+                } catch (Exception e) {
+                    log.warn("Error processing month {}: {}", m, e.getMessage());
+                }
             }
 
-            final List<Group> finalTeacherGroups = teacherGroups;
-            BigDecimal teacherRevenue = finalYearPayments.stream()
-                    .filter(p -> p.getGroup() != null && finalTeacherGroups.stream()
-                            .anyMatch(g -> g.getId().equals(p.getGroup().getId())))
-                    .map(Payment::getAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            // Teacher stats
+            List<TeacherYearlyStats> teacherStats = new ArrayList<>();
+            try {
+                List<Teacher> teachers = safeList(teacherRepository.findAll());
 
-            teacherStats.add(TeacherYearlyStats.builder()
-                    .teacherId(teacher.getId())
-                    .teacherName(teacher.getFullName())
-                    .groupCount(teacherGroups.size())
-                    .totalStudents(totalStudents)
-                    .totalRevenue(teacherRevenue)
-                    .build());
+                for (Teacher teacher : teachers) {
+                    try {
+                        if (teacher == null || teacher.getId() == null) continue;
+
+                        List<Group> teacherGroups = safeList(groupRepository.findByTeacherId(teacher.getId()));
+
+                        int totalStudents = 0;
+                        for (Group g : teacherGroups) {
+                            try {
+                                if (g != null && g.getId() != null) {
+                                    Integer count = studentGroupRepository.countActiveByGroupId(g.getId());
+                                    totalStudents += (count != null ? count : 0);
+                                }
+                            } catch (Exception e) {
+                                log.warn("Error counting students for group: {}", e.getMessage());
+                            }
+                        }
+
+                        BigDecimal teacherRevenue = yearPayments.stream()
+                                .filter(p -> p != null && p.getGroup() != null && p.getAmount() != null &&
+                                        teacherGroups.stream().anyMatch(g -> g != null &&
+                                                g.getId() != null && g.getId().equals(p.getGroup().getId())))
+                                .map(Payment::getAmount)
+                                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                        teacherStats.add(TeacherYearlyStats.builder()
+                                .teacherId(teacher.getId())
+                                .teacherName(teacher.getFullName() != null ? teacher.getFullName() : "")
+                                .groupCount(teacherGroups.size())
+                                .totalStudents(totalStudents)
+                                .totalRevenue(teacherRevenue)
+                                .build());
+                    } catch (Exception e) {
+                        log.warn("Error processing teacher stats: {}", e.getMessage());
+                    }
+                }
+
+                teacherStats.sort((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()));
+            } catch (Exception e) {
+                log.warn("Error getting teacher stats: {}", e.getMessage());
+            }
+
+            // Top groups
+            List<GroupYearlyStats> topGroups = new ArrayList<>();
+            try {
+                List<Group> allGroups = safeList(groupRepository.findAll());
+
+                for (Group group : allGroups) {
+                    try {
+                        if (group == null || group.getId() == null) continue;
+
+                        List<Payment> groupPayments = yearPayments.stream()
+                                .filter(p -> p != null && p.getGroup() != null &&
+                                        group.getId().equals(p.getGroup().getId()))
+                                .toList();
+
+                        BigDecimal groupRevenue = groupPayments.stream()
+                                .filter(p -> p.getAmount() != null)
+                                .map(Payment::getAmount)
+                                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                        topGroups.add(GroupYearlyStats.builder()
+                                .groupId(group.getId())
+                                .groupName(group.getName() != null ? group.getName() : "")
+                                .teacherName(getTeacherName(group))
+                                .totalRevenue(groupRevenue)
+                                .totalPayments(groupPayments.size())
+                                .build());
+                    } catch (Exception e) {
+                        log.warn("Error processing group stats: {}", e.getMessage());
+                    }
+                }
+
+                topGroups.sort((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()));
+                if (topGroups.size() > 10) {
+                    topGroups = new ArrayList<>(topGroups.subList(0, 10));
+                }
+            } catch (Exception e) {
+                log.warn("Error getting top groups: {}", e.getMessage());
+            }
+
+            // Attendance stats
+            int totalPresent = 0;
+            int totalAbsent = 0;
+            for (int m = 1; m <= 12; m++) {
+                try {
+                    List<Attendance> monthAttendances = safeList(attendanceRepository.findByMonth(year, m));
+                    totalPresent += (int) monthAttendances.stream()
+                            .filter(a -> a != null && a.getStatus() == AttendanceStatus.PRESENT)
+                            .count();
+                    totalAbsent += (int) monthAttendances.stream()
+                            .filter(a -> a != null && a.getStatus() == AttendanceStatus.ABSENT)
+                            .count();
+                } catch (Exception e) {
+                    log.warn("Error getting attendance for month {}: {}", m, e.getMessage());
+                }
+            }
+
+            BigDecimal attendanceRate = BigDecimal.ZERO;
+            if ((totalPresent + totalAbsent) > 0) {
+                attendanceRate = BigDecimal.valueOf(totalPresent * 100.0 / (totalPresent + totalAbsent))
+                        .setScale(2, RoundingMode.HALF_UP);
+            }
+
+            return YearlyReport.builder()
+                    .year(year)
+                    .totalRevenue(totalRevenue)
+                    .totalPayments(yearPayments.size())
+                    .monthlyBreakdown(monthlyBreakdown)
+                    .teacherStats(teacherStats)
+                    .topGroups(topGroups)
+                    .attendanceStats(AttendanceStats.builder()
+                            .totalPresent(totalPresent)
+                            .totalAbsent(totalAbsent)
+                            .attendanceRate(attendanceRate)
+                            .build())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Error generating yearly report: {}", e.getMessage(), e);
+            // Return empty report
+            return YearlyReport.builder()
+                    .year(year)
+                    .totalRevenue(BigDecimal.ZERO)
+                    .totalPayments(0)
+                    .monthlyBreakdown(new ArrayList<>())
+                    .teacherStats(new ArrayList<>())
+                    .topGroups(new ArrayList<>())
+                    .attendanceStats(AttendanceStats.builder()
+                            .totalPresent(0)
+                            .totalAbsent(0)
+                            .attendanceRate(BigDecimal.ZERO)
+                            .build())
+                    .build();
         }
-
-        // Sort by revenue descending
-        teacherStats.sort((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()));
-
-        // Top groups by revenue
-        List<Group> allGroups = groupRepository.findAll();
-        if (allGroups == null) allGroups = new ArrayList<>();
-
-        List<GroupYearlyStats> topGroups = new ArrayList<>();
-
-        for (Group group : allGroups) {
-            if (group == null) continue;
-
-            List<Payment> groupPayments = finalYearPayments.stream()
-                    .filter(p -> p.getGroup() != null && p.getGroup().getId().equals(group.getId()))
-                    .toList();
-
-            BigDecimal groupRevenue = groupPayments.stream()
-                    .map(Payment::getAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            topGroups.add(GroupYearlyStats.builder()
-                    .groupId(group.getId())
-                    .groupName(group.getName())
-                    .teacherName(getTeacherName(group))
-                    .totalRevenue(groupRevenue)
-                    .totalPayments(groupPayments.size())
-                    .build());
-        }
-
-        // Sort by revenue descending and limit to 10
-        topGroups.sort((a, b) -> b.getTotalRevenue().compareTo(a.getTotalRevenue()));
-        if (topGroups.size() > 10) {
-            topGroups = topGroups.subList(0, 10);
-        }
-
-        // Yearly attendance stats
-        int totalPresent = 0;
-        int totalAbsent = 0;
-        for (int month = 1; month <= 12; month++) {
-            List<Attendance> monthAttendances = attendanceRepository.findByMonth(year, month);
-            if (monthAttendances == null) continue;
-
-            totalPresent += (int) monthAttendances.stream()
-                    .filter(a -> a.getStatus() == AttendanceStatus.PRESENT)
-                    .count();
-            totalAbsent += (int) monthAttendances.stream()
-                    .filter(a -> a.getStatus() == AttendanceStatus.ABSENT)
-                    .count();
-        }
-
-        BigDecimal attendanceRate = (totalPresent + totalAbsent) > 0
-                ? BigDecimal.valueOf(totalPresent * 100.0 / (totalPresent + totalAbsent))
-                .setScale(2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
-
-        return YearlyReport.builder()
-                .year(year)
-                .totalRevenue(totalRevenue)
-                .totalPayments(yearPayments.size())
-                .monthlyBreakdown(monthlyBreakdown)
-                .teacherStats(teacherStats)
-                .topGroups(topGroups)
-                .attendanceStats(AttendanceStats.builder()
-                        .totalPresent(totalPresent)
-                        .totalAbsent(totalAbsent)
-                        .attendanceRate(attendanceRate)
-                        .build())
-                .build();
     }
 }
