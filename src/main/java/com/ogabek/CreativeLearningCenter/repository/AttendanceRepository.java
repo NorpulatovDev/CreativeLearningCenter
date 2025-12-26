@@ -17,6 +17,10 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
 
     List<Attendance> findByDate(LocalDate date);
 
+    // Fetch attendance with group and teacher eagerly loaded for reports
+    @Query("SELECT a FROM Attendance a JOIN FETCH a.group g JOIN FETCH g.teacher WHERE a.date = :date")
+    List<Attendance> findByDateWithGroupAndTeacher(@Param("date") LocalDate date);
+
     Optional<Attendance> findByStudentIdAndGroupIdAndDate(Long studentId, Long groupId, LocalDate date);
 
     @Query("SELECT a FROM Attendance a WHERE a.group.id = :groupId " +
