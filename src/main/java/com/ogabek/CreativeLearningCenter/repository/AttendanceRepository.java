@@ -18,39 +18,67 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
     List<Attendance> findByDate(LocalDate date);
 
     // Fetch attendance with group and teacher eagerly loaded for reports
-    @Query("SELECT a FROM Attendance a JOIN FETCH a.group g JOIN FETCH g.teacher WHERE a.date = :date")
+    // Using LEFT JOIN FETCH to handle cases where teacher might be null
+    @Query("SELECT a FROM Attendance a JOIN FETCH a.group g LEFT JOIN FETCH g.teacher WHERE a.date = :date")
     List<Attendance> findByDateWithGroupAndTeacher(@Param("date") LocalDate date);
 
     Optional<Attendance> findByStudentIdAndGroupIdAndDate(Long studentId, Long groupId, LocalDate date);
 
     @Query("SELECT a FROM Attendance a WHERE a.group.id = :groupId " +
-            "AND FUNCTION('YEAR', a.date) = :year AND FUNCTION('MONTH', a.date) = :month")
-    List<Attendance> findByGroupIdAndMonth(@Param("groupId") Long groupId,
-                                           @Param("year") int year,
-                                           @Param("month") int month);
+            "AND a.date >= :startDate AND a.date < :endDate")
+    List<Attendance> findByGroupIdAndDateBetween(@Param("groupId") Long groupId,
+                                                 @Param("startDate") LocalDate startDate,
+                                                 @Param("endDate") LocalDate endDate);
+
+    // Keep old method signature but use date range internally
+    default List<Attendance> findByGroupIdAndMonth(Long groupId, int year, int month) {
+        LocalDate startDate = LocalDate.of(year, month, 1);
+        LocalDate endDate = startDate.plusMonths(1);
+        return findByGroupIdAndDateBetween(groupId, startDate, endDate);
+    }
 
     @Query("SELECT a FROM Attendance a WHERE a.student.id = :studentId " +
-            "AND FUNCTION('YEAR', a.date) = :year AND FUNCTION('MONTH', a.date) = :month")
-    List<Attendance> findByStudentIdAndMonth(@Param("studentId") Long studentId,
-                                             @Param("year") int year,
-                                             @Param("month") int month);
+            "AND a.date >= :startDate AND a.date < :endDate")
+    List<Attendance> findByStudentIdAndDateBetween(@Param("studentId") Long studentId,
+                                                   @Param("startDate") LocalDate startDate,
+                                                   @Param("endDate") LocalDate endDate);
+
+    // Keep old method signature but use date range internally
+    default List<Attendance> findByStudentIdAndMonth(Long studentId, int year, int month) {
+        LocalDate startDate = LocalDate.of(year, month, 1);
+        LocalDate endDate = startDate.plusMonths(1);
+        return findByStudentIdAndDateBetween(studentId, startDate, endDate);
+    }
 
     @Query("SELECT a FROM Attendance a WHERE " +
             "a.student.id = :studentId AND " +
             "a.group.id = :groupId AND " +
-            "YEAR(a.date) = :year AND " +
-            "MONTH(a.date) = :month " +
+            "a.date >= :startDate AND a.date < :endDate " +
             "ORDER BY a.date DESC")
-    List<Attendance> findByStudentIdAndGroupIdAndMonth(
+    List<Attendance> findByStudentIdAndGroupIdAndDateBetween(
             @Param("studentId") Long studentId,
             @Param("groupId") Long groupId,
-            @Param("year") Integer year,
-            @Param("month") Integer month
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
     );
 
-    @Query("SELECT a FROM Attendance a WHERE " +
-            "FUNCTION('YEAR', a.date) = :year AND FUNCTION('MONTH', a.date) = :month")
-    List<Attendance> findByMonth(@Param("year") int year, @Param("month") int month);
+    // Keep old method signature
+    default List<Attendance> findByStudentIdAndGroupIdAndMonth(Long studentId, Long groupId, Integer year, Integer month) {
+        LocalDate startDate = LocalDate.of(year, month, 1);
+        LocalDate endDate = startDate.plusMonths(1);
+        return findByStudentIdAndGroupIdAndDateBetween(studentId, groupId, startDate, endDate);
+    }
+
+    @Query("SELECT a FROM Attendance a WHERE a.date >= :startDate AND a.date < :endDate")
+    List<Attendance> findByDateBetween(@Param("startDate") LocalDate startDate,
+                                       @Param("endDate") LocalDate endDate);
+
+    // Keep old method signature but use date range internally
+    default List<Attendance> findByMonth(int year, int month) {
+        LocalDate startDate = LocalDate.of(year, month, 1);
+        LocalDate endDate = startDate.plusMonths(1);
+        return findByDateBetween(startDate, endDate);
+    }
 
     @Query("SELECT a FROM Attendance a WHERE a.student.id = :studentId AND a.date = :date")
     List<Attendance> findByStudentIdAndDate(@Param("studentId") Long studentId, @Param("date") LocalDate date);

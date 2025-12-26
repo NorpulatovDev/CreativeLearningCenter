@@ -21,13 +21,14 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     List<Payment> findByPaidForMonth(String paidForMonth);
 
-    @Query("SELECT p FROM Payment p WHERE FUNCTION('DATE', p.paidAt) = :date")
+    @Query("SELECT p FROM Payment p WHERE CAST(p.paidAt AS LocalDate) = :date")
     List<Payment> findByPaidAtDate(@Param("date") LocalDate date);
 
     @Query("SELECT p FROM Payment p WHERE p.paidForMonth LIKE :yearPrefix%")
     List<Payment> findByPaidForMonthStartingWith(@Param("yearPrefix") String yearPrefix);
 
-    @Query("SELECT p FROM Payment p WHERE FUNCTION('YEAR', p.paidAt) = :year")
+    // Fixed for PostgreSQL - use paidForMonth string which starts with year
+    @Query("SELECT p FROM Payment p WHERE p.paidForMonth LIKE CONCAT(:year, '-%')")
     List<Payment> findByYear(@Param("year") int year);
 
     @Query("SELECT COALESCE(SUM(p.amount), 0) FROM Payment p WHERE p.student.id = :studentId")
@@ -37,9 +38,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     BigDecimal getTotalPaidByGroupId(@Param("groupId") Long groupId);
 
     @Query("SELECT COALESCE(SUM(p.amount), 0) FROM Payment p WHERE p.student.id = :studentId AND p.group.id = :groupId AND p.paidForMonth = :month")
-    BigDecimal getTotalPaidByStudentIdAndGroupIdAndMonth(@Param("studentId") Long studentId, 
-                                                          @Param("groupId") Long groupId, 
-                                                          @Param("month") String month);
+    BigDecimal getTotalPaidByStudentIdAndGroupIdAndMonth(@Param("studentId") Long studentId,
+                                                         @Param("groupId") Long groupId,
+                                                         @Param("month") String month);
 
     boolean existsByStudentIdAndGroupIdAndPaidForMonth(Long studentId, Long groupId, String paidForMonth);
 
