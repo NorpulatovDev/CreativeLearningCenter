@@ -6,10 +6,7 @@ import com.ogabek.CreativeLearningCenter.entity.Student;
 import com.ogabek.CreativeLearningCenter.entity.StudentGroup;
 import com.ogabek.CreativeLearningCenter.exception.ResourceNotFoundException;
 import com.ogabek.CreativeLearningCenter.mapper.StudentMapper;
-import com.ogabek.CreativeLearningCenter.repository.GroupRepository;
-import com.ogabek.CreativeLearningCenter.repository.PaymentRepository;
-import com.ogabek.CreativeLearningCenter.repository.StudentGroupRepository;
-import com.ogabek.CreativeLearningCenter.repository.StudentRepository;
+import com.ogabek.CreativeLearningCenter.repository.*;
 import com.ogabek.CreativeLearningCenter.service.StudentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +27,7 @@ public class StudentServiceImpl implements StudentService {
     private final StudentGroupRepository studentGroupRepository;
     private final GroupRepository groupRepository;
     private final PaymentRepository paymentRepository;
+    private final AttendanceRepository attendanceRepository;
     private final StudentMapper studentMapper;
     
     @Override
@@ -99,6 +97,57 @@ public class StudentServiceImpl implements StudentService {
         List<StudentGroup> activeGroups = studentGroupRepository.findByStudentIdAndActiveTrue(id);
         
         return studentMapper.toResponse(student, totalPaid, activeGroups);
+    }
+    
+    @Override
+    public void delete(Long id) {
+        log.info("Deleting student {} with all related data", id);
+        
+        Student student = findStudentById(id);
+        
+        // Delete all related data in correct order to avoid foreign key conflicts
+        // 1. Delete attendance records
+        List<Long> studentGroups = studentGroupRepository.findByStudentId(id)
+                .stream()
+                .map(sg -> sg.getGroup().getId())
+                .toList();
+        
+        for (Long groupId : studentGroups) {
+            attendanceRepository.findByStudentIdAndDate(id, null).stream()
+                    .filter(attendance -> attendance.getGroup().getId().equals(groupId))
+                    .forEach(attendanceRepository::delete);
+        }
+        
+        log.info("Deleted attendance records for student {}", id);
+        
+        // 2. Delete payments
+        List<Long> paymentIds = paymentRepository.findByStudentId(id)
+                .stream()
+                .map(payment -> payment.getId())
+                .toList();
+        
+        paymentIds.forEach(paymentId -> {
+            paymentRepository.deleteById(paymentId);
+        });
+        
+        log.info("Deleted {} payments for student {}", paymentIds.size(), id);
+        
+        // 3. Delete student-group enrollments
+        List<Long> enrollmentIds = studentGroupRepository.findByStudentId(id)
+                .stream()
+                .map(StudentGroup::getId)
+                .toList();
+        
+        enrollmentIds.forEach(enrollmentId -> {
+            studentGroupRepository.deleteById(enrollmentId);
+        });
+        
+        log.info("Deleted {} enrollments for student {}", enrollmentIds.size(), id);
+        
+        // 4. Finally delete the student
+        studentRepository.delete(student);
+        
+        log.info("Student {} and all related data deleted successfully", id);
     }
     
     private Student findStudentById(Long id) {

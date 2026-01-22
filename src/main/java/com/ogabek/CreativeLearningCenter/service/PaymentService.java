@@ -16,4 +16,8 @@ public interface PaymentService {
     List<PaymentResponse> getByStudentId(Long studentId);
 
     List<PaymentResponse> getByGroupId(Long groupId);
+    
+    PaymentResponse update(Long id, PaymentRequest request);
+    
+    void delete(Long id);
 }

@@ -71,8 +71,7 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional(readOnly = true)
     public PaymentResponse getById(Long id) {
-        Payment payment = paymentRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Payment", id));
+        Payment payment = findPaymentById(id);
         return paymentMapper.toResponse(payment);
     }
     
@@ -106,5 +105,59 @@ public class PaymentServiceImpl implements PaymentService {
         return paymentRepository.findByGroupId(groupId).stream()
                 .map(paymentMapper::toResponse)
                 .toList();
+    }
+    
+    @Override
+    public PaymentResponse update(Long id, PaymentRequest request) {
+        log.info("Updating payment {}", id);
+        
+        Payment payment = findPaymentById(id);
+        
+        // Check if updating to different student/group
+        boolean studentChanged = !payment.getStudent().getId().equals(request.getStudentId());
+        boolean groupChanged = !payment.getGroup().getId().equals(request.getGroupId());
+        
+        if (studentChanged || groupChanged) {
+            Student student = studentRepository.findById(request.getStudentId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Student", request.getStudentId()));
+            
+            Group group = groupRepository.findById(request.getGroupId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Group", request.getGroupId()));
+            
+            // Validate new student is enrolled in new group
+            var enrollment = studentGroupRepository.findByStudentIdAndGroupId(
+                    request.getStudentId(), request.getGroupId());
+            
+            if (enrollment.isEmpty()) {
+                throw new BadRequestException(
+                        "Student is not enrolled in this group. Cannot update payment.");
+            }
+            
+            payment.setStudent(student);
+            payment.setGroup(group);
+        }
+        
+        payment.setAmount(request.getAmount());
+        payment.setPaidForMonth(request.getPaidForMonth());
+        
+        payment = paymentRepository.save(payment);
+        log.info("Payment {} updated successfully", id);
+        
+        return paymentMapper.toResponse(payment);
+    }
+    
+    @Override
+    public void delete(Long id) {
+        log.info("Deleting payment {}", id);
+        
+        Payment payment = findPaymentById(id);
+        paymentRepository.delete(payment);
+        
+        log.info("Payment {} deleted successfully", id);
+    }
+    
+    private Payment findPaymentById(Long id) {
+        return paymentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment", id));
     }
 }

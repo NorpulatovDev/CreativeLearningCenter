@@ -42,4 +42,16 @@ public class PaymentController {
     public ResponseEntity<List<PaymentResponse>> getByGroupId(@PathVariable Long groupId) {
         return ResponseEntity.ok(paymentService.getByGroupId(groupId));
     }
+    
+    @PutMapping("/{id}")
+    public ResponseEntity<PaymentResponse> update(@PathVariable Long id,
+                                                   @Valid @RequestBody PaymentRequest request) {
+        return ResponseEntity.ok(paymentService.update(id, request));
+    }
+    
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        paymentService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
 }
