@@ -13,12 +13,13 @@ import java.util.Optional;
 @Repository
 public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
 
+    // Find all attendances for a student (needed for cascade deletion)
+    List<Attendance> findByStudentId(Long studentId);
+
     List<Attendance> findByGroupIdAndDate(Long groupId, LocalDate date);
 
     List<Attendance> findByDate(LocalDate date);
 
-    // Fetch attendance with group and teacher eagerly loaded for reports
-    // Using LEFT JOIN FETCH to handle cases where teacher might be null
     @Query("SELECT a FROM Attendance a JOIN FETCH a.group g LEFT JOIN FETCH g.teacher WHERE a.date = :date")
     List<Attendance> findByDateWithGroupAndTeacher(@Param("date") LocalDate date);
 
@@ -30,7 +31,6 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
                                                  @Param("startDate") LocalDate startDate,
                                                  @Param("endDate") LocalDate endDate);
 
-    // Keep old method signature but use date range internally
     default List<Attendance> findByGroupIdAndMonth(Long groupId, int year, int month) {
         LocalDate startDate = LocalDate.of(year, month, 1);
         LocalDate endDate = startDate.plusMonths(1);
@@ -43,7 +43,6 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
                                                    @Param("startDate") LocalDate startDate,
                                                    @Param("endDate") LocalDate endDate);
 
-    // Keep old method signature but use date range internally
     default List<Attendance> findByStudentIdAndMonth(Long studentId, int year, int month) {
         LocalDate startDate = LocalDate.of(year, month, 1);
         LocalDate endDate = startDate.plusMonths(1);
@@ -62,7 +61,6 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
             @Param("endDate") LocalDate endDate
     );
 
-    // Keep old method signature
     default List<Attendance> findByStudentIdAndGroupIdAndMonth(Long studentId, Long groupId, Integer year, Integer month) {
         LocalDate startDate = LocalDate.of(year, month, 1);
         LocalDate endDate = startDate.plusMonths(1);
@@ -73,15 +71,11 @@ public interface AttendanceRepository extends JpaRepository<Attendance, Long> {
     List<Attendance> findByDateBetween(@Param("startDate") LocalDate startDate,
                                        @Param("endDate") LocalDate endDate);
 
-    // Keep old method signature but use date range internally
     default List<Attendance> findByMonth(int year, int month) {
         LocalDate startDate = LocalDate.of(year, month, 1);
         LocalDate endDate = startDate.plusMonths(1);
         return findByDateBetween(startDate, endDate);
     }
-
-    @Query("SELECT a FROM Attendance a WHERE a.student.id = :studentId AND a.date = :date")
-    List<Attendance> findByStudentIdAndDate(@Param("studentId") Long studentId, @Param("date") LocalDate date);
 
     void deleteByGroupId(Long groupId);
 
