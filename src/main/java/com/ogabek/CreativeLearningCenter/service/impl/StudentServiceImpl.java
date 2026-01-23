@@ -15,7 +15,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -56,10 +58,29 @@ public class StudentServiceImpl implements StudentService {
     @Override
     @Transactional(readOnly = true)
     public List<StudentResponse> getAll() {
-        return studentRepository.findAll().stream()
+        log.info("Fetching all students with optimized queries");
+
+        // Fetch all students with their groups, teachers in ONE query
+        List<Student> students = studentRepository.findAllWithGroups();
+        log.info("Fetched {} students", students.size());
+
+        // Fetch all payment totals in ONE query
+        Map<Long, BigDecimal> paymentTotals = paymentRepository.getTotalPaidGroupedByStudent()
+                .stream()
+                .collect(Collectors.toMap(
+                        arr -> (Long) arr[0],
+                        arr -> (BigDecimal) arr[1]
+                ));
+        log.info("Fetched payment totals for {} students", paymentTotals.size());
+
+        // Map to responses efficiently
+        return students.stream()
                 .map(student -> {
-                    BigDecimal totalPaid = paymentRepository.getTotalPaidByStudentId(student.getId());
-                    List<StudentGroup> activeGroups = studentGroupRepository.findByStudentIdAndActiveTrue(student.getId());
+                    BigDecimal totalPaid = paymentTotals.getOrDefault(student.getId(), BigDecimal.ZERO);
+                    // Get active groups from already-loaded collection (no DB query)
+                    List<StudentGroup> activeGroups = student.getStudentGroups().stream()
+                            .filter(StudentGroup::getActive)
+                            .toList();
                     return studentMapper.toResponse(student, totalPaid, activeGroups);
                 })
                 .toList();

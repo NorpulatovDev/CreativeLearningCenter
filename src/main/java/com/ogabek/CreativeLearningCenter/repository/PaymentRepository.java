@@ -27,7 +27,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("SELECT p FROM Payment p WHERE p.paidForMonth LIKE :yearPrefix%")
     List<Payment> findByPaidForMonthStartingWith(@Param("yearPrefix") String yearPrefix);
 
-    // Fixed for PostgreSQL - use paidForMonth string which starts with year
     @Query("SELECT p FROM Payment p WHERE p.paidForMonth LIKE CONCAT(:year, '-%')")
     List<Payment> findByYear(@Param("year") int year);
 
@@ -45,4 +44,10 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     boolean existsByStudentIdAndGroupIdAndPaidForMonth(Long studentId, Long groupId, String paidForMonth);
 
     void deleteByGroupId(Long groupId);
+
+    // NEW METHOD - Get total payments grouped by student in one query
+    @Query("SELECT p.student.id, COALESCE(SUM(p.amount), 0) " +
+            "FROM Payment p " +
+            "GROUP BY p.student.id")
+    List<Object[]> getTotalPaidGroupedByStudent();
 }

@@ -37,7 +37,7 @@ public class StudentMapper {
                 .map(sg -> {
                     BigDecimal paidThisMonth = paymentRepository.getTotalPaidByStudentIdAndGroupIdAndMonth(
                             student.getId(), sg.getGroup().getId(), currentMonth);
-                    
+
                     boolean hasPaid = paidThisMonth.compareTo(BigDecimal.ZERO) > 0;
 
                     return StudentResponse.GroupInfo.builder()
