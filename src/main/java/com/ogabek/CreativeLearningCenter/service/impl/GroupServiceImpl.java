@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -67,14 +68,20 @@ public class GroupServiceImpl implements GroupService {
                 })
                 .toList();
     }
-    
+
     @Override
     @Transactional(readOnly = true)
     public List<GroupResponse> getAllSortedByTeacher() {
+        // Get current month in YYYY-MM format
+        LocalDate now = LocalDate.now();
+        String currentMonth = now.getYear() + "-" + String.format("%02d", now.getMonthValue());
+
         return groupRepository.findAllByOrderByTeacherIdAscNameAsc().stream()
                 .map(group -> {
                     int activeStudentsCount = studentGroupRepository.countActiveByGroupId(group.getId());
-                    BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupId(group.getId());
+                    // Use current month instead of total
+                    BigDecimal totalPaid = paymentRepository.getTotalPaidByGroupIdAndMonth(
+                            group.getId(), currentMonth);
                     return groupMapper.toResponse(group, activeStudentsCount, totalPaid);
                 })
                 .toList();

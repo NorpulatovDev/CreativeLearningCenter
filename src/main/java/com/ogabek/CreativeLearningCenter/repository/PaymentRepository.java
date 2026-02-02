@@ -50,4 +50,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             "FROM Payment p " +
             "GROUP BY p.student.id")
     List<Object[]> getTotalPaidGroupedByStudent();
+
+    @Query("SELECT COALESCE(SUM(p.amount), 0) FROM Payment p " +
+            "WHERE p.group.id = :groupId AND p.paidForMonth = :month")
+    BigDecimal getTotalPaidByGroupIdAndMonth(@Param("groupId") Long groupId,
+                                             @Param("month") String month);
 }

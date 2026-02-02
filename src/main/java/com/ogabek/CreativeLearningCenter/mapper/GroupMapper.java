@@ -18,10 +18,12 @@ public class GroupMapper {
                 .monthlyFee(request.getMonthlyFee())
                 .build();
     }
-    
+
     public GroupResponse toResponse(Group group, int activeStudentsCount, BigDecimal totalPaid) {
-        BigDecimal totalAmountToPay = group.getMonthlyFee().multiply(BigDecimal.valueOf(activeStudentsCount));
-        
+        // Monthly expected = monthlyFee × number of students
+        BigDecimal totalAmountToPay = group.getMonthlyFee()
+                .multiply(BigDecimal.valueOf(activeStudentsCount));
+
         return GroupResponse.builder()
                 .id(group.getId())
                 .name(group.getName())
@@ -29,8 +31,8 @@ public class GroupMapper {
                 .teacherName(group.getTeacher().getFullName())
                 .monthlyFee(group.getMonthlyFee())
                 .studentsCount(activeStudentsCount)
-                .totalAmountToPay(totalAmountToPay)
-                .totalPaid(totalPaid)
+                .totalAmountToPay(totalAmountToPay)  // Monthly expected
+                .totalPaid(totalPaid)  // Monthly paid
                 .createdAt(group.getCreatedAt())
                 .updatedAt(group.getUpdatedAt())
                 .build();
