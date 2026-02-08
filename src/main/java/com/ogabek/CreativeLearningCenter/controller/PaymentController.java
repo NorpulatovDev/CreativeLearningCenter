@@ -3,6 +3,7 @@ package com.ogabek.CreativeLearningCenter.controller;
 import com.ogabek.CreativeLearningCenter.dto.request.PaymentRequest;
 import com.ogabek.CreativeLearningCenter.dto.response.PaymentResponse;
 import com.ogabek.CreativeLearningCenter.service.PaymentService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -41,6 +42,16 @@ public class PaymentController {
     @GetMapping("/group/{groupId}")
     public ResponseEntity<List<PaymentResponse>> getByGroupId(@PathVariable Long groupId) {
         return ResponseEntity.ok(paymentService.getByGroupId(groupId));
+    }
+    
+    @GetMapping("/group/{groupId}/month/{year}/{month}")
+    @Operation(summary = "Guruhga qilingan to'lovlarni oy bo'yicha olish",
+               description = "Ma'lum bir guruh uchun ma'lum bir oydagi barcha to'lovlarni qaytaradi")
+    public ResponseEntity<List<PaymentResponse>> getByGroupIdAndMonth(
+            @PathVariable Long groupId,
+            @PathVariable Integer year,
+            @PathVariable Integer month) {
+        return ResponseEntity.ok(paymentService.getByGroupIdAndMonth(groupId, year, month));
     }
     
     @PutMapping("/{id}")

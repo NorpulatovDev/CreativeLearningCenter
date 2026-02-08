@@ -3,6 +3,8 @@ package com.ogabek.CreativeLearningCenter.controller;
 import com.ogabek.CreativeLearningCenter.dto.request.StudentRequest;
 import com.ogabek.CreativeLearningCenter.dto.response.StudentResponse;
 import com.ogabek.CreativeLearningCenter.service.StudentService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -34,8 +36,15 @@ public class StudentController {
     }
     
     @GetMapping("/group/{groupId}")
-    public ResponseEntity<List<StudentResponse>> getByGroupId(@PathVariable Long groupId) {
-        return ResponseEntity.ok(studentService.getByGroupId(groupId));
+    @Operation(summary = "Guruh bo'yicha o'quvchilarni olish", 
+               description = "Ma'lum bir guruhdagi o'quvchilarni olish. Year va month parametrlari optional - agar berilmasa, joriy oy ishlatiladi.")
+    public ResponseEntity<List<StudentResponse>> getByGroupId(
+            @PathVariable Long groupId,
+            @Parameter(description = "Yil (optional, default: joriy yil)")
+            @RequestParam(required = false) Integer year,
+            @Parameter(description = "Oy (1-12, optional, default: joriy oy)")
+            @RequestParam(required = false) Integer month) {
+        return ResponseEntity.ok(studentService.getByGroupId(groupId, year, month));
     }
     
     @PutMapping("/{id}")

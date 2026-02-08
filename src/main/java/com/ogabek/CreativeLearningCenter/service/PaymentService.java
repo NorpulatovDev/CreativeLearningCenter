@@ -17,6 +17,8 @@ public interface PaymentService {
 
     List<PaymentResponse> getByGroupId(Long groupId);
     
+    List<PaymentResponse> getByGroupIdAndMonth(Long groupId, Integer year, Integer month);
+    
     PaymentResponse update(Long id, PaymentRequest request);
     
     void delete(Long id);

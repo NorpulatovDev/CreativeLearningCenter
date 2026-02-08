@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,7 +44,7 @@ public class StudentServiceImpl implements StudentService {
         student = studentRepository.save(student);
         log.info("Student created with id: {}", student.getId());
 
-        return studentMapper.toResponse(student, BigDecimal.ZERO, List.of());
+        return studentMapper.toResponse(student, BigDecimal.ZERO, List.of(), null, null);
     }
 
     @Override
@@ -52,7 +53,7 @@ public class StudentServiceImpl implements StudentService {
         Student student = findStudentById(id);
         BigDecimal totalPaid = paymentRepository.getTotalPaidByStudentId(id);
         List<StudentGroup> activeGroups = studentGroupRepository.findByStudentIdAndActiveTrue(id);
-        return studentMapper.toResponse(student, totalPaid, activeGroups);
+        return studentMapper.toResponse(student, totalPaid, activeGroups, null, null);
     }
 
     @Override
@@ -81,17 +82,32 @@ public class StudentServiceImpl implements StudentService {
                     List<StudentGroup> activeGroups = student.getStudentGroups().stream()
                             .filter(StudentGroup::getActive)
                             .toList();
-                    return studentMapper.toResponse(student, totalPaid, activeGroups);
+                    return studentMapper.toResponse(student, totalPaid, activeGroups, null, null);
                 })
                 .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<StudentResponse> getByGroupId(Long groupId) {
+    public List<StudentResponse> getByGroupId(Long groupId, Integer year, Integer month) {
         if (!groupRepository.existsById(groupId)) {
             throw new ResourceNotFoundException("Group", groupId);
         }
+
+        // If year/month not provided, use current date
+        LocalDate checkDate = LocalDate.now();
+        if (year != null && month != null) {
+            if (month < 1 || month > 12) {
+                throw new IllegalArgumentException("Month must be between 1 and 12");
+            }
+            checkDate = LocalDate.of(year, month, 1);
+        }
+        
+        final Integer finalYear = checkDate.getYear();
+        final Integer finalMonth = checkDate.getMonthValue();
+        
+        log.info("Fetching students for group {} with payment check for {}-{}", 
+                groupId, finalYear, finalMonth);
 
         // Get students enrolled in this group via StudentGroup junction table
         List<StudentGroup> enrollments = studentGroupRepository.findByGroupIdAndActiveTrue(groupId);
@@ -101,7 +117,7 @@ public class StudentServiceImpl implements StudentService {
                     Student student = enrollment.getStudent();
                     BigDecimal totalPaid = paymentRepository.getTotalPaidByStudentId(student.getId());
                     List<StudentGroup> activeGroups = studentGroupRepository.findByStudentIdAndActiveTrue(student.getId());
-                    return studentMapper.toResponse(student, totalPaid, activeGroups);
+                    return studentMapper.toResponse(student, totalPaid, activeGroups, finalYear, finalMonth);
                 })
                 .toList();
     }
@@ -117,7 +133,7 @@ public class StudentServiceImpl implements StudentService {
         BigDecimal totalPaid = paymentRepository.getTotalPaidByStudentId(id);
         List<StudentGroup> activeGroups = studentGroupRepository.findByStudentIdAndActiveTrue(id);
 
-        return studentMapper.toResponse(student, totalPaid, activeGroups);
+        return studentMapper.toResponse(student, totalPaid, activeGroups, null, null);
     }
 
     @Override

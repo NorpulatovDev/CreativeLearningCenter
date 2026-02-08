@@ -26,9 +26,16 @@ public class StudentMapper {
                 .build();
     }
 
-    public StudentResponse toResponse(Student student, BigDecimal totalPaid, List<StudentGroup> activeGroups) {
-        LocalDate now = LocalDate.now();
-        String currentMonth = now.getYear() + "-" + String.format("%02d", now.getMonthValue());
+    public StudentResponse toResponse(Student student, BigDecimal totalPaid,
+                                      List<StudentGroup> activeGroups,
+                                      Integer checkYear, Integer checkMonth) {
+        // Use current month if not specified
+        LocalDate checkDate = LocalDate.now();
+        if (checkYear != null && checkMonth != null) {
+            checkDate = LocalDate.of(checkYear, checkMonth, 1);
+        }
+
+        final String targetMonth = checkDate.getYear() + "-" + String.format("%02d", checkDate.getMonthValue());
 
         int groupsPaid = 0;
         int groupsUnpaid = 0;
@@ -36,7 +43,7 @@ public class StudentMapper {
         List<StudentResponse.GroupInfo> groupInfos = activeGroups.stream()
                 .map(sg -> {
                     BigDecimal paidThisMonth = paymentRepository.getTotalPaidByStudentIdAndGroupIdAndMonth(
-                            student.getId(), sg.getGroup().getId(), currentMonth);
+                            student.getId(), sg.getGroup().getId(), targetMonth);
 
                     boolean hasPaid = paidThisMonth.compareTo(BigDecimal.ZERO) > 0;
 
@@ -45,15 +52,15 @@ public class StudentMapper {
                             .groupName(sg.getGroup().getName())
                             .teacherName(sg.getGroup().getTeacher().getFullName())
                             .monthlyFee(sg.getGroup().getMonthlyFee())
-                            .paidForCurrentMonth(hasPaid)
-                            .currentMonth(currentMonth)
+                            .paidForCurrentMonth(hasPaid)           // ✅ To'g'rilandi
+                            .currentMonth(targetMonth)
                             .amountPaidThisMonth(paidThisMonth)
                             .build();
                 })
                 .toList();
 
         for (StudentResponse.GroupInfo groupInfo : groupInfos) {
-            if (Boolean.TRUE.equals(groupInfo.getPaidForCurrentMonth())) {
+            if (Boolean.TRUE.equals(groupInfo.getPaidForCurrentMonth())) {  // ✅ To'g'rilandi
                 groupsPaid++;
             } else {
                 groupsUnpaid++;

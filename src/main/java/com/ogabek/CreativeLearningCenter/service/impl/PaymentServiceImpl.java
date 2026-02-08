@@ -108,6 +108,24 @@ public class PaymentServiceImpl implements PaymentService {
     }
     
     @Override
+    @Transactional(readOnly = true)
+    public List<PaymentResponse> getByGroupIdAndMonth(Long groupId, Integer year, Integer month) {
+        if (!groupRepository.existsById(groupId)) {
+            throw new ResourceNotFoundException("Group", groupId);
+        }
+        
+        if (month < 1 || month > 12) {
+            throw new IllegalArgumentException("Month must be between 1 and 12");
+        }
+        
+        String monthKey = year + "-" + String.format("%02d", month);
+        
+        return paymentRepository.findByGroupIdAndPaidForMonth(groupId, monthKey).stream()
+                .map(paymentMapper::toResponse)
+                .toList();
+    }
+    
+    @Override
     public PaymentResponse update(Long id, PaymentRequest request) {
         log.info("Updating payment {}", id);
         

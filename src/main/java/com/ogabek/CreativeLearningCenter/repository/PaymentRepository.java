@@ -20,6 +20,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     List<Payment> findByStudentIdAndGroupId(Long studentId, Long groupId);
 
     List<Payment> findByPaidForMonth(String paidForMonth);
+    
+    List<Payment> findByGroupIdAndPaidForMonth(Long groupId, String paidForMonth);
 
     @Query("SELECT p FROM Payment p WHERE CAST(p.paidAt AS LocalDate) = :date")
     List<Payment> findByPaidAtDate(@Param("date") LocalDate date);

@@ -13,7 +13,7 @@ public interface StudentService {
 
     List<StudentResponse> getAll();
 
-    List<StudentResponse> getByGroupId(Long groupId);
+    List<StudentResponse> getByGroupId(Long groupId, Integer year, Integer month);
 
     StudentResponse update(Long id, StudentRequest request);
     
